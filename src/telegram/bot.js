@@ -24,18 +24,18 @@ function getCompaniesMessage() {
 
 function getJobsMessage() {
   const rows = db.prepare(`
-    SELECT j.title, j.job_url, j.location_text, j.ghana_eligible, c.name AS company_name
+    SELECT j.title, j.job_url, j.location_text, j.ghana_eligible, j.posted_at, j.first_seen_at, c.name AS company_name
     FROM jobs j
     JOIN companies c ON c.id = j.company_id
     WHERE j.status = 'open' AND j.role_match_score > 0
-    ORDER BY j.first_seen_at DESC
+    ORDER BY COALESCE(j.posted_at, j.first_seen_at) DESC
     LIMIT 10
   `).all();
 
   if (!rows.length) return "No matching jobs indexed yet.";
 
   return ["💼 Latest matching jobs", "", ...rows.map((job, index) =>
-    `${index + 1}. ${job.title}\n   ${job.company_name}\n   ${job.ghana_eligible ? "Ghana eligibility: evidence found" : "Ghana eligibility: unconfirmed"}\n   ${job.job_url}`
+    `${index + 1}. ${job.title}\n   ${job.company_name}\n   ${job.posted_at ? `Posted: ${new Date(job.posted_at).toISOString().slice(0, 10)}` : `First seen: ${job.first_seen_at}`}\n   ${job.ghana_eligible ? "Ghana eligibility: evidence found" : "Ghana eligibility: unconfirmed"}\n   ${job.job_url}`
   )].join("\n");
 }
 
