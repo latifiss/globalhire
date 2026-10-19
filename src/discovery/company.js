@@ -232,6 +232,7 @@ export async function runCompanyDiscovery() {
     for (const source of discoverySources()) {
       pagesChecked += 1;
       const externalCandidates = await findExternalCompanyDomains(source);
+      logger.info({ source: source.name, candidatesFound: externalCandidates.length }, "Company discovery source checked");
       for (const candidate of externalCandidates) {
         if (!candidates.has(candidate.domain)) {
           candidates.set(candidate.domain, { url: candidate.url, source: candidate.source });
@@ -241,8 +242,22 @@ export async function runCompanyDiscovery() {
 
     for (const [domain, candidate] of candidates) {
       pagesChecked += 1;
-      const result = await inspectCompany(candidate.url, candidate.source);
-      if (result) found += 1;
+      try {
+        const result = await inspectCompany(candidate.url, candidate.source);
+        if (result) {
+          found += 1;
+          logger.info({
+            company: result.domain,
+            careersUrl: result.careersUrl,
+            eligibilityStatus: result.eligibilityStatus,
+            source: candidate.source
+          }, "Company candidate checked");
+        } else {
+          logger.debug({ domain, source: candidate.source }, "Company candidate skipped");
+        }
+      } catch (error) {
+        logger.warn({ domain, source: candidate.source, error: error.message }, "Company candidate check failed");
+      }
     }
 
     db.prepare(`
