@@ -205,7 +205,15 @@ async function checkCompany(company) {
     return { pages: 1, jobs: 0, alerts: 0 };
   }
 
-  const atsJobs = await fetchAtsJobs(company.careers_url);\n  let jobs = 0;\n  let alerts = 0;\n  for (const parsed of atsJobs) {\n    alerts += await saveJob(company, parsed);\n    jobs += 1;\n  }\n\n  const $ = parseHtml(careersPage.html);
+  const atsJobs = await fetchAtsJobs(company.careers_url);
+  let jobs = 0;
+  let alerts = 0;
+  for (const parsed of atsJobs) {
+    alerts += await saveJob(company, parsed);
+    jobs += 1;
+  }
+
+  const $ = parseHtml(careersPage.html);
   const links = [];
   $("a[href]").each((_, element) => {
     const href = $(element).attr("href");
