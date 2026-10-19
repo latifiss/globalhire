@@ -12,8 +12,29 @@ const careerHints = /career|jobs|join[- ]?us|work[- ]?with[- ]?us|open[- ]?roles
 const ignoredDomains = new Set([
   "linkedin.com", "twitter.com", "x.com", "facebook.com", "instagram.com",
   "youtube.com", "tiktok.com", "github.com", "wellfound.com", "producthunt.com",
-  "google.com", "youtube-nocookie.com", "crunchbase.com", "wikipedia.org"
+  "google.com", "youtube-nocookie.com", "crunchbase.com", "wikipedia.org",
+  "github.blog", "githubstatus.com", "github.community", "github.careers",
+  "twitch.tv", "trust.wellfound.ai", "calendly.com"
 ]);
+
+const ignoredHostPatterns = [
+  /(^|\\.)(blog|status|community|support|help|docs|trust|investors|press|news|about)\\./i,
+  /(^|\\.)(google|microsoft|apple|amazon|meta|twitch|github|linkedin|wellfound|producthunt)\\./i
+];
+
+function isIgnoredDomain(domain) {
+  return ignoredDomains.has(domain)
+    || [...ignoredDomains].some(ignored => domain.endsWith(`.${ignored}`))
+    || ignoredHostPatterns.some(pattern => pattern.test(domain));
+}
+
+function isLikelyCompanyLink(label, url) {
+  const text = `${label} ${url}`.toLowerCase();
+  if (!label || label.length < 2) return false;
+  if (/privacy|terms|cookie|status|documentation|support|help center|blog|press|newsroom|login|sign.?up|sign.?in|pricing|contact|about us|social media/i.test(text)) return false;
+  return /company|startup|product|team|founder|website|visit|launch|maker|saas|software|platform|app|studio|labs|inc\\b|\\.io\\b|\\.ai\\b|\\.com\\b/i.test(text)
+    && !/^(home|learn more|read more|click here|more|next|previous)$/i.test(label.trim());
+}
 
 function getCompanyName($, domain) {
   const value = $("meta[property='og:site_name']").attr("content")
@@ -49,7 +70,7 @@ function employeeRange(text) {
 
 async function inspectCompany(websiteUrl, source) {
   const domain = normalizeDomain(websiteUrl);
-  if (!domain || ignoredDomains.has(domain)) return null;
+  if (!domain || isIgnoredDomain(domain)) return null;
 
   const rootUrl = `https://${domain}`;
   const page = await fetchPage(rootUrl);
@@ -67,7 +88,20 @@ async function inspectCompany(websiteUrl, source) {
     if (url && careerHints.test(`${label} ${url}`)) links.push(url);
   });
 
-  const careersUrl = [...new Set(links)][0] ?? null;
+  let careersUrl = [...new Set(links)][0] ?? null;
+
+  if (!careersUrl) {
+    for (const candidate of ["/careers", "/jobs", "/company/careers", "/about/careers"]) {
+      const probe = await fetchPage(new URL(candidate, rootUrl).href);
+      if (probe?.html && probe.status < 400) {
+        const probeText = pageText(parseHtml(probe.html));
+        if (/career|job opening|open roles|join our team|positions/i.test(probeText)) {
+          careersUrl = probe.url;
+          break;
+        }
+      }
+    }
+  }
   const policy = eligibilityFrom(text);
   const range = employeeRange(text);
   const linkedinUrl = $("a[href*='linkedin.com/company/']").first().attr("href") ?? null;
