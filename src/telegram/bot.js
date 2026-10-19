@@ -47,6 +47,15 @@ async function handleUpdate(update) {
   if (config.telegramChatId && chatId !== String(config.telegramChatId)) return;
 
   const command = message.text.trim().split(/\s+/)[0].split("@")[0].toLowerCase();
+
+  if (command === "/crawl") {
+    await sendTelegramMessage(chatId, "🔄 Manual crawl cycle requested. I will discover companies first, then monitor their jobs. Check /stats and the terminal logs for progress.");
+    void import("../scheduler/index.js").then(({ runCycle }) => runCycle()).catch(error => {
+      logger.error({ error: error.message }, "Manual crawl cycle failed");
+    });
+    return;
+  }
+
   const replies = {
     "/start": helpMessage,
     "/help": helpMessage,
