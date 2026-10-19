@@ -16,7 +16,7 @@ const atsHosts = new Set(["boards.greenhouse.io", "job-boards.greenhouse.io", "j
 function atsBoardFromUrl(value) {
   try {
     const url = new URL(value);
-    const host = url.hostname.toLowerCase().replace(/^www\\./, "");
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
     if (!atsHosts.has(host)) return null;
     const slug = url.pathname.split("/").filter(Boolean)[0];
     return slug ? { host, slug } : null;
@@ -75,8 +75,8 @@ async function parseJobPage(url, fallbackTitle) {
   };
 }
 
-async function fetchAtsJobs(careersUrl) {
-  const page = await fetchPage(careersUrl);
+async function fetchAtsJobs(pageUrl) {
+  const page = await fetchPage(pageUrl);
   if (!page?.html || page.status >= 400) return [];
   const $ = parseHtml(page.html);
   const boards = new Map();
@@ -108,7 +108,7 @@ async function fetchAtsJobs(careersUrl) {
 
       for (const item of rows) {
         const title = item.title ?? item.text ?? "";
-        const description = (item.content ?? item.descriptionHtml ?? item.description ?? "").replace(/<[^>]*>/g, " ").replace(/\\s+/g, " ").trim().slice(0, 30000);
+        const description = (item.content ?? item.descriptionHtml ?? item.description ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 30000);
         const role = matchRole(title, description);
         if (!role.matched) continue;
         const locationValue = item.location?.name ?? item.categories?.location ?? item.location ?? "";
@@ -197,15 +197,25 @@ async function saveJob(company, parsed) {
 }
 
 async function checkCompany(company) {
-  if (!company.careers_url) return { pages: 0, jobs: 0, alerts: 0 };
+  const pageUrl = company.careers_url || company.website_url;
+  if (!pageUrl) {
+    logger.info({ company: company.domain, reason: "no_website_or_careers_url" }, "Skipped company job check");
+    return { pages: 0, jobs: 0, alerts: 0 };
+  }
 
-  const careersPage = await fetchPage(company.careers_url);
+  const careersPage = await fetchPage(pageUrl);
   if (!careersPage?.html || careersPage.status >= 400) {
+    logger.info({ company: company.domain, pageUrl, reason: "careers_page_fetch_failed" }, "Company job check could not fetch page");
     db.prepare("UPDATE companies SET last_job_check_at = CURRENT_TIMESTAMP WHERE id = ?").run(company.id);
     return { pages: 1, jobs: 0, alerts: 0 };
   }
 
-  const atsJobs = await fetchAtsJobs(company.careers_url);
+  const atsPageUrls = [...new Set([company.website_url, company.careers_url].filter(Boolean))];
+  const atsJobMap = new Map();
+  for (const atsPageUrl of atsPageUrls) {
+    for (const parsed of await fetchAtsJobs(atsPageUrl)) atsJobMap.set(parsed.jobUrl, parsed);
+  }
+  const atsJobs = [...atsJobMap.values()];
   let jobs = 0;
   let alerts = 0;
   for (const parsed of atsJobs) {
@@ -290,7 +300,15 @@ async function checkCompany(company) {
   }
 
   db.prepare("UPDATE companies SET last_job_check_at = CURRENT_TIMESTAMP WHERE id = ?").run(company.id);
-  return { pages: candidates.length + 1, jobs, alerts };
+  logger.info({
+    company: company.domain,
+    pageUrl,
+    atsJobs: atsJobs.length,
+    candidateLinks: candidates.length,
+    jobsFound: jobs,
+    alertsSent: alerts
+  }, "Company job check completed");
+  return { pages: candidates.length + atsPageUrls.length, jobs, alerts };
 }
 
 export async function runJobMonitoring() {
@@ -301,9 +319,10 @@ export async function runJobMonitoring() {
 
   try {
     const companies = db.prepare(`
-      SELECT id, name, domain, careers_url
+      SELECT id, name, domain, website_url, careers_url
       FROM companies
-      WHERE careers_url IS NOT NULL AND careers_url != ''
+      WHERE (careers_url IS NOT NULL AND careers_url != '')
+         OR (website_url IS NOT NULL AND website_url != '')
       ORDER BY COALESCE(last_job_check_at, '') ASC
     `).all();
 
