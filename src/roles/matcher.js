@@ -12,7 +12,9 @@ const roleFamilies = [
       /founding designer/i,
       /first designer/i,
       /design lead/i,
-      /interaction designer/i
+      /interaction designer/i,
+      /visual designer/i,
+      /product design intern/i
     ],
     signals: [/figma/i, /design system/i, /prototyp/i, /user research/i, /usability/i, /product discovery/i]
   },
@@ -23,6 +25,8 @@ const roleFamilies = [
       /design technologist/i,
       /creative technologist/i,
       /frontend designer/i,
+      /design systems engineer/i,
+      /design engineer,? (?:product|frontend)/i,
       /designer.*engineer/i,
       /engineer.*design/i
     ],
@@ -36,6 +40,8 @@ const roleFamilies = [
       /frontend engineer/i,
       /web developer/i,
       /ui engineer/i,
+      /front-end developer/i,
+      /frontend software engineer/i,
       /software engineer.*frontend/i,
       /software engineer.*front[- ]end/i
     ],
