@@ -62,10 +62,20 @@ function eligibilityFrom(text) {
 }
 
 function employeeRange(text) {
-  const match = text.match(/(?:team of|company of|employees|employee range|company size)[^\d]{0,20}(\d{1,4})\s*(?:-|–|to)\s*(\d{1,4})/i)
-    || text.match(/(\d{1,4})\s*(?:-|–|to)\s*(\d{1,4})\s+employees/i);
-  if (!match) return { min: null, max: null };
-  return { min: Number(match[1]), max: Number(match[2]) };
+  const patterns = [
+    /(?:team|company|organization|organisation|employee(?:s)?|headcount|staff|people)[^\d]{0,35}(\d{1,4})\s*(?:-|–|—|to)\s*(\d{1,4})/i,
+    /(\d{1,4})\s*(?:-|–|—|to)\s*(\d{1,4})\s*(?:employees|people|team members|staff)/i,
+    /(?:team of|team size|headcount|employees|staff)[^\d]{0,20}(\d{1,4})\s*(?:employees|people|team members|staff)?/i,
+    /(?:1|one)\s*(?:-|–|—|to)\s*10\s*(?:employees|people|team members|staff)/i
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    if (match[2] !== undefined) return { min: Number(match[1]), max: Number(match[2]) };
+    const count = Number(match[1]);
+    if (Number.isFinite(count)) return { min: count, max: count };
+  }
+  return { min: null, max: null };
 }
 
 async function inspectCompany(websiteUrl, source) {
@@ -88,25 +98,31 @@ async function inspectCompany(websiteUrl, source) {
     if (url && careerHints.test(`${label} ${url}`)) links.push(url);
   });
 
-  let careersUrl = [...new Set(links)][0] ?? null;
+  const careerCandidates = [...new Set(links)].sort((a, b) => {
+    const priority = value => /greenhouse|lever\.co|ashbyhq|workable|\/careers?\b|\/jobs?\b|\/join\b/i.test(value) ? 0 : 1;
+    return priority(a) - priority(b);
+  });
+  let careersUrl = careerCandidates[0] ?? null;
+  const evidencePages = [{ url: page.url, text }];
 
-  if (!careersUrl) {
-    for (const candidate of ["/careers", "/jobs", "/company/careers", "/about/careers"]) {
+  if (!careersUrl || !/greenhouse|lever\.co|ashbyhq|workable|\/careers?\b|\/jobs?\b/i.test(careersUrl)) {
+    for (const candidate of ["/careers", "/jobs", "/company/careers", "/about/careers", "/about", "/company", "/team"]) {
       const probe = await fetchPage(new URL(candidate, rootUrl).href);
-      if (probe?.html && probe.status < 400) {
-        const probeText = pageText(parseHtml(probe.html));
-        if (/career|job opening|open roles|join our team|positions/i.test(probeText)) {
-          careersUrl = probe.url;
-          break;
-        }
+      if (!probe?.html || probe.status >= 400) continue;
+      const probeText = pageText(parseHtml(probe.html));
+      evidencePages.push({ url: probe.url, text: probeText });
+      if (!careersUrl && /career|job opening|open roles|join our team|positions|greenhouse|lever\.co|ashbyhq|workable/i.test(probeText)) {
+        careersUrl = probe.url;
       }
     }
   }
-  const policy = eligibilityFrom(text);
-  const range = employeeRange(text);
+
+  const combinedText = evidencePages.map(item => item.text).join(" ");
+  const policy = eligibilityFrom(combinedText);
+  const range = employeeRange(combinedText);
   const linkedinUrl = $("a[href*='linkedin.com/company/']").first().attr("href") ?? null;
   const eligibleSize = range.max !== null && range.max <= 50;
-  const evidence = [...policy.evidence];
+  const evidence = [...policy.evidence, ...evidencePages.map(item => `Checked public page: ${item.url}`)];
 
   if (range.max !== null) evidence.push(`Detected public team size range: ${range.min}-${range.max}`);
   if (!eligibleSize) evidence.push("Company size has not been verified as 50 employees or fewer");
@@ -189,9 +205,11 @@ async function findExternalCompanyDomains(source) {
     if (!url) return;
     const domain = normalizeDomain(url);
     if (!domain || domain === sourceDomain || domain.endsWith(`.${sourceDomain}`)) return;
-    if ([...ignoredDomains].some(ignored => domain === ignored || domain.endsWith(`.${ignored}`))) return;
+    if (isIgnoredDomain(domain)) return;
     if (/\.(png|jpe?g|gif|svg|webp|pdf|zip|css|js)(\?|$)/i.test(url)) return;
     if (domain.split(".").length < 2) return;
+    const label = $(element).text().replace(/\s+/g, " ").trim();
+    if (!isLikelyCompanyLink(label, url)) return;
     candidates.set(domain, { domain, source: source.name, url });
   });
 
