@@ -31,8 +31,9 @@ export function helpMessage() {
     "/stats — indexed companies and job counts",
     "/companies — latest indexed companies",
     "/jobs — latest matching jobs",
+    "/chatid — show your Telegram chat ID for setup",
     "/help — show this message",
     "",
-    "Eligibility is evidence-based; remote does not automatically mean worldwide hiring."
+    "Remote does not automatically mean worldwide hiring. Unconfirmed policies are labelled for review."
   ].join("\n");
 }
