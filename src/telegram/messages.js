@@ -31,6 +31,7 @@ export function helpMessage() {
     "/stats — indexed companies and job counts",
     "/companies — latest indexed companies",
     "/jobs — latest matching jobs",
+    "/crawl — run discovery and job monitoring now",
     "/chatid — show your Telegram chat ID for setup",
     "/help — show this message",
     "",
