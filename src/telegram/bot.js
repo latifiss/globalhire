@@ -15,7 +15,7 @@ function getCompaniesMessage() {
     LIMIT 10
   `).all();
 
-  if (!rows.length) return "No companies indexed yet. Discovery crawler has not populated the database.";
+  if (!rows.length) return "No companies indexed yet. Add candidate domains to seeds/seed-domains.txt.";
 
   return ["🏢 Latest indexed companies", "", ...rows.map((row, index) =>
     `${index + 1}. ${row.name || row.domain}\n   ${row.domain}\n   Status: ${row.eligibility_status} · Remote: ${row.remote_policy}`
@@ -35,7 +35,7 @@ function getJobsMessage() {
   if (!rows.length) return "No matching jobs indexed yet.";
 
   return ["💼 Latest matching jobs", "", ...rows.map((job, index) =>
-    `${index + 1}. ${job.title}\n   ${job.company_name}\n   ${job.ghana_eligible ? "Ghana eligibility: likely/verified" : "Ghana eligibility: unconfirmed"}\n   ${job.job_url}`
+    `${index + 1}. ${job.title}\n   ${job.company_name}\n   ${job.ghana_eligible ? "Ghana eligibility: evidence found" : "Ghana eligibility: unconfirmed"}\n   ${job.job_url}`
   )].join("\n");
 }
 
@@ -52,7 +52,8 @@ async function handleUpdate(update) {
     "/help": helpMessage,
     "/stats": () => formatStats(getStats()),
     "/companies": getCompaniesMessage,
-    "/jobs": getJobsMessage
+    "/jobs": getJobsMessage,
+    "/chatid": () => `Your Telegram chat ID is: ${chatId}\nAdd this value to TELEGRAM_CHAT_ID in your .env file, then restart GlobalHire.`
   };
 
   const makeReply = replies[command];
@@ -115,7 +116,7 @@ export async function sendJobAlert(job) {
     `Role: ${job.title}`,
     `Company: ${job.companyName}`,
     `Location: ${job.locationText || "Not specified"}`,
-    `Ghana eligibility: ${job.ghanaEligible ? "Eligible based on available evidence" : "Needs verification"}`,
+    `Ghana eligibility: ${job.ghanaEligible ? "Evidence found" : "Needs verification"}`,
     `Match score: ${job.matchScore ?? 0}/100`,
     "",
     job.jobUrl

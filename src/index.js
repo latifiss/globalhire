@@ -3,6 +3,7 @@ import { config } from "./config/env.js";
 import { logger } from "./config/logger.js";
 import { db, getStats } from "./database/index.js";
 import { startTelegramBot } from "./telegram/bot.js";
+import { startScheduler } from "./scheduler/index.js";
 
 const app = express();
 
@@ -21,6 +22,8 @@ const server = app.listen(config.port, () => {
 startTelegramBot().catch(error => {
   logger.error({ error: error.message }, "Telegram bot stopped unexpectedly");
 });
+
+startScheduler();
 
 function shutdown(signal) {
   logger.info({ signal }, "Shutting down GlobalHire");
