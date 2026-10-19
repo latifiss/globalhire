@@ -18,8 +18,8 @@ const ignoredDomains = new Set([
 ]);
 
 const ignoredHostPatterns = [
-  /(^|\\.)(blog|status|community|support|help|docs|trust|investors|press|news|about)\\./i,
-  /(^|\\.)(google|microsoft|apple|amazon|meta|twitch|github|linkedin|wellfound|producthunt)\\./i
+  /(^|\.)(blog|status|community|support|help|docs|trust|investors|press|news|about)\./i,
+  /(^|\.)(google|microsoft|apple|amazon|meta|twitch|github|linkedin|wellfound|producthunt)\./i
 ];
 
 function isIgnoredDomain(domain) {
@@ -32,7 +32,7 @@ function isLikelyCompanyLink(label, url) {
   const text = `${label} ${url}`.toLowerCase();
   if (!label || label.length < 2) return false;
   if (/privacy|terms|cookie|status|documentation|support|help center|blog|press|newsroom|login|sign.?up|sign.?in|pricing|contact|about us|social media/i.test(text)) return false;
-  return /company|startup|product|team|founder|website|visit|launch|maker|saas|software|platform|app|studio|labs|inc\\b|\\.io\\b|\\.ai\\b|\\.com\\b/i.test(text)
+  return /company|startup|product|team|founder|website|visit|launch|maker|saas|software|platform|app|studio|labs|inc\b|\.io\b|\.ai\b|\.com\b/i.test(text)
     && !/^(home|learn more|read more|click here|more|next|previous)$/i.test(label.trim());
 }
 
