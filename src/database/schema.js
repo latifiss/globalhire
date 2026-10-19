@@ -1,0 +1,73 @@
+export const schema = [
+  `CREATE TABLE IF NOT EXISTS companies (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    domain TEXT NOT NULL UNIQUE,
+    website_url TEXT NOT NULL,
+    careers_url TEXT,
+    linkedin_url TEXT,
+    employee_count_min INTEGER,
+    employee_count_max INTEGER,
+    remote_policy TEXT NOT NULL DEFAULT 'unknown',
+    hiring_regions TEXT NOT NULL DEFAULT 'unknown',
+    eligibility_status TEXT NOT NULL DEFAULT 'review',
+    eligibility_evidence TEXT NOT NULL DEFAULT '[]',
+    discovery_source TEXT,
+    last_checked_at TEXT,
+    last_job_check_at TEXT,
+    last_http_status INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS jobs (
+    id INTEGER PRIMARY KEY,
+    company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    job_url TEXT NOT NULL UNIQUE,
+    application_url TEXT,
+    location_text TEXT,
+    remote_policy TEXT NOT NULL DEFAULT 'unknown',
+    employment_type TEXT,
+    posted_at TEXT,
+    first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    status TEXT NOT NULL DEFAULT 'open',
+    role_families TEXT NOT NULL DEFAULT '[]',
+    role_match_score INTEGER NOT NULL DEFAULT 0,
+    ghana_eligible INTEGER NOT NULL DEFAULT 0,
+    alert_sent_at TEXT,
+    content_hash TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS crawl_runs (
+    id INTEGER PRIMARY KEY,
+    crawler TEXT NOT NULL,
+    target TEXT,
+    status TEXT NOT NULL,
+    started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at TEXT,
+    pages_checked INTEGER NOT NULL DEFAULT 0,
+    records_found INTEGER NOT NULL DEFAULT 0,
+    error TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS discovery_sources (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    url TEXT NOT NULL,
+    source_type TEXT NOT NULL DEFAULT 'directory',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_checked_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  "CREATE INDEX IF NOT EXISTS idx_companies_eligibility ON companies(eligibility_status)",
+  "CREATE INDEX IF NOT EXISTS idx_companies_last_job_check ON companies(last_job_check_at)",
+  "CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)",
+  "CREATE INDEX IF NOT EXISTS idx_jobs_alert ON jobs(ghana_eligible, alert_sent_at)",
+  "CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company_id)"
+];

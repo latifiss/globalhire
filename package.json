@@ -3,20 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "A personal remote-company discovery and job monitoring system with Telegram notifications.",
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "stats": "node src/cli/stats.js",
     "test": "node --test"
   },
-  "keywords": [
-    "remote-jobs",
-    "company-discovery",
-    "telegram-bot",
-    "web-crawler"
-  ],
-  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
     "cheerio": "^1.2.0",

@@ -1,0 +1,2 @@
+# Optional company domains to review, one domain per line.
+# Do not add private URLs or credentials.
