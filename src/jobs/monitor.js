@@ -11,6 +11,20 @@ const globalEvidence = /worldwide|anywhere in the world|work from anywhere|remot
 const africaEvidence = /hire.{0,35}(africa|ghana)|africa.{0,35}(eligible|hiring|remote)|african countries|work from africa/i;
 const restrictiveEvidence = /must be based in (the )?(united states|u\.?s\.?|canada|united kingdom|uk|europe)|only hiring in|residents of (the )?(united states|canada|uk|united kingdom)|not available in (ghana|africa)|cannot hire in (ghana|africa)/i;
 
+const atsHosts = new Set(["boards.greenhouse.io", "job-boards.greenhouse.io", "jobs.lever.co", "jobs.ashbyhq.com"]);
+
+function atsBoardFromUrl(value) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^www\\./, "");
+    if (!atsHosts.has(host)) return null;
+    const slug = url.pathname.split("/").filter(Boolean)[0];
+    return slug ? { host, slug } : null;
+  } catch {
+    return null;
+  }
+}
+
 function jobEligibility(text) {
   if (restrictiveEvidence.test(text)) return false;
   return globalEvidence.test(text) || africaEvidence.test(text);
@@ -61,6 +75,127 @@ async function parseJobPage(url, fallbackTitle) {
   };
 }
 
+async function fetchAtsJobs(careersUrl) {
+  const page = await fetchPage(careersUrl);
+  if (!page?.html || page.status >= 400) return [];
+  const $ = parseHtml(page.html);
+  const boards = new Map();
+
+  $("a[href]").each((_, element) => {
+    const url = absoluteUrl($(element).attr("href"), page.url);
+    const board = url && atsBoardFromUrl(url);
+    if (board) boards.set(`${board.host}/${board.slug}`, board);
+  });
+
+  const jobs = [];
+  for (const board of boards.values()) {
+    const endpoint = board.host.includes("greenhouse")
+      ? `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board.slug)}/jobs?content=true`
+      : board.host === "jobs.lever.co"
+        ? `https://api.lever.co/v0/postings/${encodeURIComponent(board.slug)}?mode=json`
+        : `https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(board.slug)}?includeCompensation=true`;
+
+    try {
+      const response = await fetch(endpoint, {
+        headers: { "user-agent": "GlobalHireBot/1.0 (+public career-page monitor; respectful crawling)", accept: "application/json" },
+        signal: AbortSignal.timeout(config.requestTimeoutMs)
+      });
+      if (!response.ok) continue;
+      const data = await response.json();
+      const rows = board.host.includes("greenhouse") ? data.jobs ?? []
+        : board.host === "jobs.lever.co" ? data ?? []
+        : data.jobs ?? [];
+
+      for (const item of rows) {
+        const title = item.title ?? item.text ?? "";
+        const description = (item.content ?? item.descriptionHtml ?? item.description ?? "").replace(/<[^>]*>/g, " ").replace(/\\s+/g, " ").trim().slice(0, 30000);
+        const role = matchRole(title, description);
+        if (!role.matched) continue;
+        const locationValue = item.location?.name ?? item.categories?.location ?? item.location ?? "";
+        const location = typeof locationValue === "string" ? locationValue : JSON.stringify(locationValue);
+        const eligible = jobEligibility(`${title} ${description} ${location}`);
+        const jobUrl = item.absolute_url ?? item.hostedUrl ?? item.url ?? item.applyUrl;
+        if (!jobUrl) continue;
+        const postedValue = item.updated_at ?? item.createdAt ?? item.created_at ?? item.publishedAt ?? null;
+        jobs.push({
+          title: title.slice(0, 240),
+          description,
+          jobUrl,
+          applicationUrl: item.applyUrl ?? jobUrl,
+          locationText: location.slice(0, 240),
+          eligible,
+          roleFamilies: role.families,
+          roleScore: role.score,
+          postedAt: postedValue && !Number.isNaN(Date.parse(postedValue)) ? new Date(postedValue).toISOString() : null,
+          hash: contentHash(title, description, location)
+        });
+      }
+    } catch (error) {
+      logger.debug({ url: endpoint, error: error.message }, "Public ATS feed request failed");
+    }
+  }
+  return jobs;
+}
+
+async function saveJob(company, parsed) {
+  const previous = db.prepare("SELECT id FROM jobs WHERE job_url = ?").get(parsed.jobUrl);
+  db.prepare(`
+    INSERT INTO jobs (
+      company_id, title, description, job_url, application_url, location_text,
+      remote_policy, posted_at, role_families, role_match_score, ghana_eligible,
+      content_hash, last_seen_at, updated_at, status
+    ) VALUES (
+      @companyId, @title, @description, @jobUrl, @applicationUrl, @locationText,
+      @remotePolicy, @postedAt, @roleFamilies, @roleScore, @eligible,
+      @hash, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'open'
+    )
+    ON CONFLICT(job_url) DO UPDATE SET
+      title = excluded.title,
+      description = excluded.description,
+      application_url = excluded.application_url,
+      location_text = excluded.location_text,
+      remote_policy = excluded.remote_policy,
+      posted_at = COALESCE(excluded.posted_at, jobs.posted_at),
+      role_families = excluded.role_families,
+      role_match_score = excluded.role_match_score,
+      ghana_eligible = excluded.ghana_eligible,
+      content_hash = excluded.content_hash,
+      last_seen_at = CURRENT_TIMESTAMP,
+      updated_at = CURRENT_TIMESTAMP,
+      status = 'open'
+  `).run({
+    companyId: company.id,
+    title: parsed.title,
+    description: parsed.description,
+    jobUrl: parsed.jobUrl,
+    applicationUrl: parsed.applicationUrl,
+    locationText: parsed.locationText,
+    remotePolicy: parsed.eligible ? "explicit_global_or_africa" : "unknown",
+    postedAt: parsed.postedAt,
+    roleFamilies: JSON.stringify(parsed.roleFamilies),
+    roleScore: parsed.roleScore,
+    eligible: parsed.eligible ? 1 : 0,
+    hash: parsed.hash
+  });
+
+  if (!previous && parsed.eligible) {
+    const sent = await sendJobAlert({
+      title: parsed.title,
+      companyName: company.name || company.domain,
+      locationText: parsed.locationText,
+      ghanaEligible: parsed.eligible,
+      matchScore: parsed.roleScore,
+      jobUrl: parsed.jobUrl
+    }).catch(error => {
+      logger.error({ url: parsed.jobUrl, error: error.message }, "Could not send job alert");
+      return false;
+    });
+    if (sent) db.prepare("UPDATE jobs SET alert_sent_at = CURRENT_TIMESTAMP WHERE job_url = ?").run(parsed.jobUrl);
+    return sent ? 1 : 0;
+  }
+  return 0;
+}
+
 async function checkCompany(company) {
   if (!company.careers_url) return { pages: 0, jobs: 0, alerts: 0 };
 
@@ -70,7 +205,7 @@ async function checkCompany(company) {
     return { pages: 1, jobs: 0, alerts: 0 };
   }
 
-  const $ = parseHtml(careersPage.html);
+  const atsJobs = await fetchAtsJobs(company.careers_url);\n  let jobs = 0;\n  let alerts = 0;\n  for (const parsed of atsJobs) {\n    alerts += await saveJob(company, parsed);\n    jobs += 1;\n  }\n\n  const $ = parseHtml(careersPage.html);
   const links = [];
   $("a[href]").each((_, element) => {
     const href = $(element).attr("href");
