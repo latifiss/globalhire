@@ -131,17 +131,65 @@ function sourceDomains() {
   return raw.split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith("#"));
 }
 
+function discoverySources() {
+  const sourceFile = path.join(rootDir, "seeds", "discovery-sources.json");
+  if (!fs.existsSync(sourceFile)) return [];
+  try {
+    return JSON.parse(fs.readFileSync(sourceFile, "utf8")).filter(source => source.enabled && source.url);
+  } catch (error) {
+    logger.warn({ error: error.message }, "Could not parse discovery-sources.json");
+    return [];
+  }
+}
+
+async function findExternalCompanyDomains(source) {
+  const page = await fetchPage(source.url);
+  if (!page?.html || page.status >= 400) return [];
+  const $ = parseHtml(page.html);
+  const sourceDomain = normalizeDomain(source.url);
+  const candidates = new Map();
+
+  $("a[href]").each((_, element) => {
+    const href = $(element).attr("href");
+    const url = absoluteUrl(href, page.url);
+    if (!url) return;
+    const domain = normalizeDomain(url);
+    if (!domain || domain === sourceDomain || domain.endsWith(`.${sourceDomain}`)) return;
+    if ([...ignoredDomains].some(ignored => domain === ignored || domain.endsWith(`.${ignored}`))) return;
+    if (/\.(png|jpe?g|gif|svg|webp|pdf|zip|css|js)(\?|$)/i.test(url)) return;
+    if (domain.split(".").length < 2) return;
+    candidates.set(domain, { domain, source: source.name, url });
+  });
+
+  return [...candidates.values()].slice(0, 25);
+}
+
 export async function runCompanyDiscovery() {
   const run = db.prepare("INSERT INTO crawl_runs (crawler, status) VALUES (?, ?)").run("company-discovery", "running");
   let found = 0;
   let pagesChecked = 0;
 
   try {
-    const domains = [...new Set(sourceDomains())];
-    for (const candidate of domains) {
-      const url = /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`;
+    const candidates = new Map();
+    for (const domain of sourceDomains()) {
+      const url = /^https?:\/\//i.test(domain) ? domain : `https://${domain}`;
+      const normalized = normalizeDomain(url);
+      if (normalized) candidates.set(normalized, { url, source: "seed-domains.txt" });
+    }
+
+    for (const source of discoverySources()) {
       pagesChecked += 1;
-      const result = await inspectCompany(url, "seed-domains.txt");
+      const externalCandidates = await findExternalCompanyDomains(source);
+      for (const candidate of externalCandidates) {
+        if (!candidates.has(candidate.domain)) {
+          candidates.set(candidate.domain, { url: candidate.url, source: candidate.source });
+        }
+      }
+    }
+
+    for (const [domain, candidate] of candidates) {
+      pagesChecked += 1;
+      const result = await inspectCompany(candidate.url, candidate.source);
       if (result) found += 1;
     }
 
@@ -150,8 +198,8 @@ export async function runCompanyDiscovery() {
         pages_checked = ?, records_found = ? WHERE id = ?
     `).run(pagesChecked, found, run.lastInsertRowid);
 
-    logger.info({ pagesChecked, found }, "Company discovery run completed");
-    return { pagesChecked, found };
+    logger.info({ pagesChecked, candidates: candidates.size, found }, "Company discovery run completed");
+    return { pagesChecked, candidates: candidates.size, found };
   } catch (error) {
     db.prepare(`
       UPDATE crawl_runs SET status = 'failed', finished_at = CURRENT_TIMESTAMP,
