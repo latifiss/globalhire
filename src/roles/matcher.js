@@ -5,6 +5,7 @@ const roleFamilies = [
       /product designer/i,
       /product design/i,
       /ux designer/i,
+      /ux\\s*\\/?\\s*ui designer/i,
       /ui\s*\/?\s*ux designer/i,
       /ui designer/i,
       /user experience designer/i,
