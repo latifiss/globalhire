@@ -215,8 +215,6 @@ async function checkCompany(company) {
   });
 
   const candidates = [...new Map(links.map(link => [link.url, link])).values()].slice(0, config.maxPagesPerDomain);
-  let jobs = 0;
-  let alerts = 0;
 
   for (const candidate of candidates) {
     const parsed = await parseJobPage(candidate.url, candidate.label);
