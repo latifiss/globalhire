@@ -1,23 +1,30 @@
 [
   {
-    "name": "Wellfound",
-    "url": "https://wellfound.com",
+    "name": "Product Hunt weekly launches",
+    "url": "https://www.producthunt.com/leaderboard/weekly/all",
     "type": "company_discovery",
     "enabled": true,
-    "notes": "Use only public pages and respect site terms and robots directives."
+    "notes": "Discover recently launched products. Verify linked companies independently."
   },
   {
-    "name": "Product Hunt",
-    "url": "https://www.producthunt.com",
+    "name": "Indie Hackers products",
+    "url": "https://www.indiehackers.com/products",
     "type": "company_discovery",
     "enabled": true,
-    "notes": "Discover small and newly launched products; verify each company on its own website."
+    "notes": "Discover independent software businesses and small teams from public product pages."
   },
   {
-    "name": "GitHub",
-    "url": "https://github.com",
+    "name": "TinySeed portfolio",
+    "url": "https://tinyseed.com/portfolio",
     "type": "company_discovery",
     "enabled": true,
-    "notes": "Use public organization and project pages as discovery clues, not as proof of hiring eligibility."
+    "notes": "Discover small bootstrapped SaaS companies; team size and hiring must be verified independently."
+  },
+  {
+    "name": "Wellfound startup directory",
+    "url": "https://wellfound.com/companies",
+    "type": "company_discovery",
+    "enabled": true,
+    "notes": "Discover candidate companies from publicly accessible directory links; obey robots.txt and site terms."
   }
 ]
