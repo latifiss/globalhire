@@ -6,22 +6,9 @@ import { fetchPage, parseHtml, absoluteUrl, pageText } from "../crawler/http.js"
 import { matchRole } from "../roles/matcher.js";
 import { sendJobAlert } from "../telegram/bot.js";
 import { evaluateHiringPolicy } from "../eligibility/policy.js";
+import { detectAtsBoard, fetchAtsBoardJobs } from "./ats.js";
 
 const jobLinkHint = /job|career|opening|position|role|greenhouse|lever\.co|ashbyhq|workable/i;
-
-const atsHosts = new Set(["boards.greenhouse.io", "job-boards.greenhouse.io", "jobs.lever.co", "jobs.ashbyhq.com"]);
-
-function atsBoardFromUrl(value) {
-  try {
-    const url = new URL(value);
-    const host = url.hostname.toLowerCase().replace(/^www\./, "");
-    if (!atsHosts.has(host)) return null;
-    const slug = url.pathname.split("/").filter(Boolean)[0];
-    return slug ? { host, slug } : null;
-  } catch {
-    return null;
-  }
-}
 
 function jobEligibility(text) {
   return evaluateHiringPolicy(text, "Ghana");
@@ -37,7 +24,10 @@ function looksLikeJobUrl(url, label) {
 
 async function parseJobPage(url, fallbackTitle) {
   const page = await fetchPage(url);
-  if (!page?.html || page.status >= 400) return null;
+  if (!page?.html || page.status >= 400) {
+    logger.debug({ url, status: page?.status ?? null, reason: "job_page_fetch_failed" }, "Rejected job page candidate");
+    return null;
+  }
 
   const $ = parseHtml(page.html);
   const title = $("h1").first().text().trim()
@@ -51,6 +41,10 @@ async function parseJobPage(url, fallbackTitle) {
   const text = pageText($);
   const locationText = text.match(/(?:location|workplace|remote location)\s*[:\-]?\s*([^.!]{1,100})/i)?.[1]?.trim() ?? "";
   const role = matchRole(title, description);
+  if (!title || title.length < 3) {
+    logger.debug({ url: page.url, title, reason: "job_title_missing" }, "Rejected job page candidate");
+    return null;
+  }
   if (!role.matched) {
     logger.debug({ url: page.url, title, reason: "role_not_matched" }, "Rejected job page candidate");
     return null;
@@ -85,57 +79,52 @@ async function fetchAtsJobs(pageUrl) {
 
   $("a[href]").each((_, element) => {
     const url = absoluteUrl($(element).attr("href"), page.url);
-    const board = url && atsBoardFromUrl(url);
-    if (board) boards.set(`${board.host}/${board.slug}`, board);
+    const board = url && detectAtsBoard(url);
+    if (board) boards.set(\`\${board.provider}/\${board.host}/\${board.slug ?? board.url}\`, board);
   });
+
+  const scriptUrls = page.html.match(/https?:\\\\?\\/\\\\?\\/[^"'\\s<>]+/g) ?? [];
+  for (const rawUrl of scriptUrls) {
+    const url = rawUrl.replace(/\\\\\\\\u002F/g, "/").replace(/\\\\\\\\\\//g, "/");
+    const board = detectAtsBoard(url);
+    if (board) boards.set(\`\${board.provider}/\${board.host}/\${board.slug ?? board.url}\`, board);
+  }
 
   const jobs = [];
   for (const board of boards.values()) {
-    const endpoint = board.host.includes("greenhouse")
-      ? `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board.slug)}/jobs?content=true`
-      : board.host === "jobs.lever.co"
-        ? `https://api.lever.co/v0/postings/${encodeURIComponent(board.slug)}?mode=json`
-        : `https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(board.slug)}?includeCompensation=true`;
+    const result = await fetchAtsBoardJobs(board, { timeoutMs: config.requestTimeoutMs });
+    logger.info({
+      companyPage: pageUrl,
+      provider: board.provider,
+      boardUrl: board.url,
+      endpoint: result.endpoint,
+      status: result.status,
+      jobsReturned: result.jobs.length,
+      error: result.error
+    }, "ATS board checked");
 
-    try {
-      const response = await fetch(endpoint, {
-        headers: { "user-agent": "GlobalHireBot/1.0 (+public career-page monitor; respectful crawling)", accept: "application/json" },
-        signal: AbortSignal.timeout(config.requestTimeoutMs)
-      });
-      if (!response.ok) continue;
-      const data = await response.json();
-      const rows = board.host.includes("greenhouse") ? data.jobs ?? []
-        : board.host === "jobs.lever.co" ? data ?? []
-        : data.jobs ?? [];
-
-      for (const item of rows) {
-        const title = item.title ?? item.text ?? "";
-        const description = (item.content ?? item.descriptionHtml ?? item.description ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 30000);
-        const role = matchRole(title, description);
-        if (!role.matched) continue;
-        const locationValue = item.location?.name ?? item.categories?.location ?? item.location ?? "";
-        const location = typeof locationValue === "string" ? locationValue : JSON.stringify(locationValue);
-        const eligibility = jobEligibility(`${title} ${description} ${location}`);
-        const jobUrl = item.absolute_url ?? item.hostedUrl ?? item.url ?? item.applyUrl;
-        if (!jobUrl) continue;
-        const postedValue = item.updated_at ?? item.createdAt ?? item.created_at ?? item.publishedAt ?? null;
-        jobs.push({
-          title: title.slice(0, 240),
-          description,
-          jobUrl,
-          applicationUrl: item.applyUrl ?? jobUrl,
-          locationText: location.slice(0, 240),
-          eligible: eligibility.status === "eligible",
-          eligibilityPolicy: eligibility.policy,
-          eligibilityEvidence: eligibility.evidence,
-          roleFamilies: role.families,
-          roleScore: role.score,
-          postedAt: postedValue && !Number.isNaN(Date.parse(postedValue)) ? new Date(postedValue).toISOString() : null,
-          hash: contentHash(title, description, location)
-        });
+    for (const item of result.jobs) {
+      const role = matchRole(item.title, item.description);
+      if (!role.matched) {
+        logger.debug({ provider: board.provider, url: item.jobUrl, title: item.title, reason: "role_not_matched" }, "Rejected ATS job");
+        continue;
       }
-    } catch (error) {
-      logger.debug({ url: endpoint, error: error.message }, "Public ATS feed request failed");
+      const eligibility = jobEligibility(\`\${item.title} \${item.description} \${item.location}\`);
+      const postedAt = item.postedAt && !Number.isNaN(Date.parse(item.postedAt)) ? new Date(item.postedAt).toISOString() : null;
+      jobs.push({
+        title: item.title.slice(0, 240),
+        description: item.description,
+        jobUrl: item.jobUrl,
+        applicationUrl: item.applicationUrl,
+        locationText: item.location.slice(0, 240),
+        eligible: eligibility.status === "eligible",
+        eligibilityPolicy: eligibility.policy,
+        eligibilityEvidence: eligibility.evidence,
+        roleFamilies: role.families,
+        roleScore: role.score,
+        postedAt,
+        hash: contentHash(item.title, item.description, item.location)
+      });
     }
   }
   return jobs;
@@ -283,12 +272,16 @@ async function checkCompany(company) {
     const href = $(element).attr("href");
     const label = $(element).text().trim().replace(/\s+/g, " ");
     const url = absoluteUrl(href, careersPage.url);
-    if (url && looksLikeJobUrl(url, label)) links.push({ url, label });
+    const board = url && detectAtsBoard(url);
+    if (url && (looksLikeJobUrl(url, label) || board)) links.push({ url, label, provider: board?.provider ?? null });
   });
 
   const candidates = [...new Map(links.map(link => [link.url, link])).values()].slice(0, config.maxPagesPerDomain);
+  logger.debug({ company: company.domain, pageUrl, candidateLinks: candidates }, "Job candidate links extracted");
 
   for (const candidate of candidates) {
+    const board = detectAtsBoard(candidate.url);
+    if (board) continue;
     const parsed = await parseJobPage(candidate.url, candidate.label);
     if (!parsed) continue;
 
