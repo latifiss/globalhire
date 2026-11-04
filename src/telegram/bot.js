@@ -110,12 +110,13 @@ export async function startTelegramBot() {
       });
 
       for (const update of updates) {
-        offset = update.update_id + 1;
-        persistOffset(offset);
         try {
           await handleUpdate(update);
+          offset = update.update_id + 1;
+          persistOffset(offset);
         } catch (error) {
-          logger.error({ error: error.message }, "Telegram update handler failed");
+          logger.error({ updateId: update.update_id, error: error.message }, "Telegram update handler failed");
+          break;
         }
       }
     } catch (error) {
