@@ -8,6 +8,7 @@ export const schema = [
     linkedin_url TEXT,
     employee_count_min INTEGER,
     employee_count_max INTEGER,
+    company_size_status TEXT NOT NULL DEFAULT 'unknown',
     remote_policy TEXT NOT NULL DEFAULT 'unknown',
     hiring_regions TEXT NOT NULL DEFAULT 'unknown',
     eligibility_status TEXT NOT NULL DEFAULT 'review',
