@@ -111,7 +111,7 @@ async function inspectCompany(websiteUrl, source) {
   if (range.max !== null) evidence.push(`Detected public team size range: ${range.min}-${range.max}`);
   if (!eligibleSize) evidence.push("Company size has not been verified as 50 employees or fewer");
 
-  const eligibilityStatus = policy.status === "ineligible" ? "ineligible" : policy.status === "eligible" && eligibleSize ? "eligible" : "review";
+  const eligibilityStatus = policy.policy === "explicit_country_exclusion" ? "ineligible" : policy.status === "eligible" && eligibleSize ? "eligible" : "review";
 
   db.prepare(`
     INSERT INTO companies (
