@@ -276,7 +276,7 @@ async function checkCompany(company) {
   });
 
   const candidates = [...new Map(links.map(link => [link.url, link])).values()].slice(0, config.maxPagesPerDomain);
-  logger.debug({ company: company.domain, pageUrl, candidateLinks: candidates }, "Job candidate links extracted");
+  logger.info({ company: company.domain, pageUrl, candidateLinks: candidates }, "Job candidate links extracted");
 
   for (const candidate of candidates) {
     const board = detectAtsBoard(candidate.url);
