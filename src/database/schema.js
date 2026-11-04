@@ -76,5 +76,7 @@ export const schema = [
   `CREATE TABLE IF NOT EXISTS telegram_state (state_key TEXT PRIMARY KEY, state_value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
   "CREATE INDEX IF NOT EXISTS idx_company_evidence_company ON company_evidence(company_id)",
   "CREATE INDEX IF NOT EXISTS idx_job_evidence_job ON job_evidence(job_id)",
-  "CREATE INDEX IF NOT EXISTS idx_job_revisions_job ON job_revisions(job_id)"
+  "CREATE INDEX IF NOT EXISTS idx_job_revisions_job ON job_revisions(job_id)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS uq_company_evidence_record ON company_evidence(company_id, evidence_type, evidence_text, source_url)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS uq_job_evidence_record ON job_evidence(job_id, evidence_type, evidence_text, source_url)"
 ];
