@@ -105,23 +105,23 @@ async function inspectCompany(websiteUrl, source) {
   const policy = evaluateHiringPolicy(combinedText, "Ghana");
   const range = employeeRange(combinedText);
   const linkedinUrl = $("a[href*='linkedin.com/company/']").first().attr("href") ?? null;
-  const eligibleSize = range.max !== null && range.max <= 50;
+  const companySizeStatus = range.max === null ? "unknown" : range.max <= 50 ? "within_target" : "over_target";
   const evidence = [...policy.evidence.map(item => `${item.type}: ${item.signal}`), ...evidencePages.map(item => `Checked public page: ${item.url}`)];
 
   if (range.max !== null) evidence.push(`Detected public team size range: ${range.min}-${range.max}`);
-  if (!eligibleSize) evidence.push("Company size has not been verified as 50 employees or fewer");
+  if (range.max === null) evidence.push("Company size has not been verified");
 
-  const eligibilityStatus = policy.policy === "explicit_country_exclusion" ? "ineligible" : policy.status === "eligible" && eligibleSize ? "eligible" : "review";
+  const eligibilityStatus = policy.status === "ineligible" ? "ineligible" : policy.status === "eligible" ? "eligible" : "review";
 
   db.prepare(`
     INSERT INTO companies (
       name, domain, website_url, careers_url, linkedin_url,
-      employee_count_min, employee_count_max, remote_policy, hiring_regions,
+      employee_count_min, employee_count_max, company_size_status, remote_policy, hiring_regions,
       eligibility_status, eligibility_evidence, discovery_source, last_checked_at,
       last_http_status, updated_at
     ) VALUES (
       @name, @domain, @websiteUrl, @careersUrl, @linkedinUrl,
-      @employeeMin, @employeeMax, @remotePolicy, @hiringRegions,
+      @employeeMin, @employeeMax, @companySizeStatus, @remotePolicy, @hiringRegions,
       @eligibilityStatus, @evidence, @source, CURRENT_TIMESTAMP,
       @status, CURRENT_TIMESTAMP
     )
@@ -132,6 +132,7 @@ async function inspectCompany(websiteUrl, source) {
       linkedin_url = COALESCE(excluded.linkedin_url, companies.linkedin_url),
       employee_count_min = COALESCE(excluded.employee_count_min, companies.employee_count_min),
       employee_count_max = COALESCE(excluded.employee_count_max, companies.employee_count_max),
+      company_size_status = CASE WHEN excluded.company_size_status = 'unknown' THEN companies.company_size_status ELSE excluded.company_size_status END,
       remote_policy = excluded.remote_policy,
       hiring_regions = excluded.hiring_regions,
       eligibility_status = excluded.eligibility_status,
@@ -148,6 +149,7 @@ async function inspectCompany(websiteUrl, source) {
     linkedinUrl,
     employeeMin: range.min,
     employeeMax: range.max,
+    companySizeStatus,
     remotePolicy: policy.policy,
     hiringRegions: policy.policy,
     eligibilityStatus,
