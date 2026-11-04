@@ -155,6 +155,17 @@ function recordJobEvidence(jobUrl, parsed) {
 }
 
 async function saveJob(company, parsed) {
+  const effective = company.eligibility_status === "ineligible"
+    ? {
+        ...parsed,
+        eligible: false,
+        eligibilityPolicy: "conflicting_company_and_job_evidence",
+        eligibilityEvidence: [...(parsed.eligibilityEvidence ?? []), {
+          type: "company_country_exclusion",
+          signal: "Company-level policy explicitly excludes Ghana"
+        }]
+      }
+    : parsed;
   const previous = db.prepare("SELECT id FROM jobs WHERE job_url = ?").get(parsed.jobUrl);
   db.prepare(`
     INSERT INTO jobs (
@@ -188,17 +199,17 @@ async function saveJob(company, parsed) {
     jobUrl: parsed.jobUrl,
     applicationUrl: parsed.applicationUrl,
     locationText: parsed.locationText,
-    remotePolicy: parsed.eligibilityPolicy,
-    hiringPolicy: parsed.eligibilityPolicy,
+    remotePolicy: effective.eligibilityPolicy,
+    hiringPolicy: effective.eligibilityPolicy,
     postedAt: parsed.postedAt,
     roleFamilies: JSON.stringify(parsed.roleFamilies),
     roleScore: parsed.roleScore,
-    eligible: parsed.eligible ? 1 : 0,
+    eligible: effective.eligible ? 1 : 0,
     hash: parsed.hash
   });
-  recordJobEvidence(parsed.jobUrl, parsed);
+  recordJobEvidence(parsed.jobUrl, effective);
 
-  if (!previous && parsed.eligible) {
+  if (!previous && effective.eligible) {
     const sent = await sendJobAlert({
       title: parsed.title,
       companyName: company.name || company.domain,
@@ -258,6 +269,17 @@ async function checkCompany(company) {
     const parsed = await parseJobPage(candidate.url, candidate.label);
     if (!parsed) continue;
 
+    const effective = company.eligibility_status === "ineligible"
+      ? {
+          ...parsed,
+          eligible: false,
+          eligibilityPolicy: "conflicting_company_and_job_evidence",
+          eligibilityEvidence: [...(parsed.eligibilityEvidence ?? []), {
+            type: "company_country_exclusion",
+            signal: "Company-level policy explicitly excludes Ghana"
+          }]
+        }
+      : parsed;
     const previous = db.prepare("SELECT id, content_hash, alert_sent_at FROM jobs WHERE job_url = ?").get(parsed.jobUrl);
     db.prepare(`
       INSERT INTO jobs (
@@ -291,18 +313,18 @@ async function checkCompany(company) {
       jobUrl: parsed.jobUrl,
       applicationUrl: parsed.applicationUrl,
       locationText: parsed.locationText,
-      remotePolicy: parsed.eligibilityPolicy,
-    hiringPolicy: parsed.eligibilityPolicy,
+      remotePolicy: effective.eligibilityPolicy,
+    hiringPolicy: effective.eligibilityPolicy,
       postedAt: parsed.postedAt,
       roleFamilies: JSON.stringify(parsed.roleFamilies),
       roleScore: parsed.roleScore,
-      eligible: parsed.eligible ? 1 : 0,
+      eligible: effective.eligible ? 1 : 0,
       hash: parsed.hash
     });
-    recordJobEvidence(parsed.jobUrl, parsed);
+    recordJobEvidence(parsed.jobUrl, effective);
     jobs += 1;
 
-    if (!previous && parsed.eligible) {
+    if (!previous && effective.eligible) {
       const sent = await sendJobAlert({
         title: parsed.title,
         companyName: company.name || company.domain,
@@ -342,7 +364,7 @@ export async function runJobMonitoring() {
 
   try {
     const companies = db.prepare(`
-      SELECT id, name, domain, website_url, careers_url
+      SELECT id, name, domain, website_url, careers_url, eligibility_status
       FROM companies
       WHERE (careers_url IS NOT NULL AND careers_url != '')
          OR (website_url IS NOT NULL AND website_url != '')
