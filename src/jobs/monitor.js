@@ -244,6 +244,9 @@ async function checkCompany(company) {
     }
   }
   if (!careersPage?.html || careersPage.status >= 400) {
+    if (company.careers_url && detectAtsBoard(company.careers_url)) {
+      await fetchAtsJobs(company.careers_url);
+    }
     logger.info({ company: company.domain, pageUrl, reason: "careers_page_fetch_failed" }, "Company job check could not fetch page");
     db.prepare("UPDATE companies SET last_job_check_at = CURRENT_TIMESTAMP WHERE id = ?").run(company.id);
     return { pages: 1, jobs: 0, alerts: 0 };
