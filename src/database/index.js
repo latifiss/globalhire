@@ -35,6 +35,11 @@ const migrate = transaction(() => {
     if (!columns.has("hiring_policy")) db.exec("ALTER TABLE jobs ADD COLUMN hiring_policy TEXT NOT NULL DEFAULT 'unknown'");
     db.prepare("INSERT INTO schema_migrations (version) VALUES (2)").run();
   }
+  if (applied < 3) {
+    const columns = new Set(db.prepare("PRAGMA table_info(companies)").all().map(column => column.name));
+    if (!columns.has("company_size_status")) db.exec("ALTER TABLE companies ADD COLUMN company_size_status TEXT NOT NULL DEFAULT 'unknown'");
+    db.prepare("INSERT INTO schema_migrations (version) VALUES (3)").run();
+  }
 });
 
 migrate();
@@ -52,9 +57,9 @@ export function getStats() {
   const jobCounts = db.prepare(`
     SELECT
       COUNT(*) AS total,
-      SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) AS open,
-      SUM(CASE WHEN ghana_eligible = 1 AND status = 'open' THEN 1 ELSE 0 END) AS eligible_open,
-      SUM(CASE WHEN alert_sent_at IS NOT NULL THEN 1 ELSE 0 END) AS alerts_sent
+      COALESCE(SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END), 0) AS open,
+      COALESCE(SUM(CASE WHEN ghana_eligible = 1 AND status = 'open' THEN 1 ELSE 0 END), 0) AS eligible_open,
+      COALESCE(SUM(CASE WHEN alert_sent_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS alerts_sent
     FROM jobs
   `).get();
 
