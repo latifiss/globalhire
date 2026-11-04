@@ -80,15 +80,8 @@ async function fetchAtsJobs(pageUrl) {
   $("a[href]").each((_, element) => {
     const url = absoluteUrl($(element).attr("href"), page.url);
     const board = url && detectAtsBoard(url);
-    if (board) boards.set(\`\${board.provider}/\${board.host}/\${board.slug ?? board.url}\`, board);
+    if (board) boards.set(board.provider + "/" + board.host + "/" + (board.slug ?? board.url), board);
   });
-
-  const scriptUrls = page.html.match(/https?:\\\\?\\/\\\\?\\/[^"'\\s<>]+/g) ?? [];
-  for (const rawUrl of scriptUrls) {
-    const url = rawUrl.replace(/\\\\\\\\u002F/g, "/").replace(/\\\\\\\\\\//g, "/");
-    const board = detectAtsBoard(url);
-    if (board) boards.set(\`\${board.provider}/\${board.host}/\${board.slug ?? board.url}\`, board);
-  }
 
   const jobs = [];
   for (const board of boards.values()) {
@@ -109,7 +102,7 @@ async function fetchAtsJobs(pageUrl) {
         logger.debug({ provider: board.provider, url: item.jobUrl, title: item.title, reason: "role_not_matched" }, "Rejected ATS job");
         continue;
       }
-      const eligibility = jobEligibility(\`\${item.title} \${item.description} \${item.location}\`);
+      const eligibility = jobEligibility(item.title + " " + item.description + " " + item.location);
       const postedAt = item.postedAt && !Number.isNaN(Date.parse(item.postedAt)) ? new Date(item.postedAt).toISOString() : null;
       jobs.push({
         title: item.title.slice(0, 240),
