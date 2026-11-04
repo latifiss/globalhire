@@ -264,7 +264,7 @@ async function checkCompany(company) {
     return { pages: 1, jobs: 0, alerts: 0 };
   }
 
-  const atsPageUrls = [...new Set([company.website_url, company.careers_url].filter(Boolean))];
+  const atsPageUrls = [...new Set([company.website_url, company.careers_url, pageUrl].filter(Boolean))];
   const atsJobMap = new Map();
   for (const atsPageUrl of atsPageUrls) {
     for (const parsed of await fetchAtsJobs(atsPageUrl)) atsJobMap.set(parsed.jobUrl, parsed);
