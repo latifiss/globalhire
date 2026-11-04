@@ -7,6 +7,16 @@ import { formatStats, helpMessage } from "./messages.js";
 let running = false;
 let offset = 0;
 
+function persistOffset(value) {
+  db.prepare(`
+    INSERT INTO telegram_state (state_key, state_value, updated_at)
+    VALUES ('telegram_update_offset', ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(state_key) DO UPDATE SET
+      state_value = excluded.state_value,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(String(value));
+}
+
 function getCompaniesMessage() {
   const rows = db.prepare(`
     SELECT name, domain, eligibility_status, remote_policy
@@ -79,6 +89,8 @@ export async function startTelegramBot() {
 
   if (running) return;
   running = true;
+  const savedOffset = db.prepare("SELECT state_value FROM telegram_state WHERE state_key = 'telegram_update_offset'").get();
+  offset = savedOffset ? Number(savedOffset.state_value) : 0;
 
   try {
     await telegramRequest("deleteWebhook", { drop_pending_updates: false });
@@ -99,6 +111,7 @@ export async function startTelegramBot() {
 
       for (const update of updates) {
         offset = update.update_id + 1;
+        persistOffset(offset);
         try {
           await handleUpdate(update);
         } catch (error) {
