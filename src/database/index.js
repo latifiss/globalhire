@@ -14,7 +14,13 @@ db.pragma("busy_timeout = 5000");
 
 const migrate = db.transaction(() => {
   for (const statement of schema) db.exec(statement);
-  db.prepare("INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)").run(1);
+  const applied = db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get().version ?? 0;
+  if (applied < 1) db.prepare("INSERT INTO schema_migrations (version) VALUES (1)").run();
+  if (applied < 2) {
+    const columns = new Set(db.prepare("PRAGMA table_info(jobs)").all().map(column => column.name));
+    if (!columns.has("hiring_policy")) db.exec("ALTER TABLE jobs ADD COLUMN hiring_policy TEXT NOT NULL DEFAULT 'unknown'");
+    db.prepare("INSERT INTO schema_migrations (version) VALUES (2)").run();
+  }
 });
 
 migrate();
