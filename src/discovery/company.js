@@ -156,6 +156,16 @@ async function inspectCompany(websiteUrl, source) {
     status: page.status
   });
 
+  const companyId = db.prepare("SELECT id FROM companies WHERE domain = ?").get(domain).id;
+  const insertEvidence = db.prepare(`
+    INSERT OR IGNORE INTO company_evidence (company_id, evidence_type, evidence_text, source_url, confidence)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  for (const item of policy.evidence) {
+    const sourcePage = evidencePages.find(entry => entry.text.toLowerCase().includes(item.signal.toLowerCase()));
+    insertEvidence.run(companyId, item.type, item.signal, sourcePage?.url ?? page.url, item.type === "missing_evidence" ? 0.2 : 0.85);
+  }
+
   return { domain, name, careersUrl, eligibilityStatus };
 }
 
