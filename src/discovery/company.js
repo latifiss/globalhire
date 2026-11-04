@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { db } from "../database/index.js";
 import { fetchPage, parseHtml, absoluteUrl, normalizeDomain, pageText } from "../crawler/http.js";
 import { logger } from "../config/logger.js";
+import { evaluateHiringPolicy } from "../eligibility/policy.js";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(currentDir, "../..");
@@ -42,23 +43,6 @@ function getCompanyName($, domain) {
     || $("title").first().text()
     || domain;
   return value.replace(/\s*[|—–:-].*$/, "").replace(/\s+/g, " ").trim().slice(0, 160) || domain;
-}
-
-function eligibilityFrom(text) {
-  const evidence = [];
-  const worldwide = /worldwide|anywhere in the world|work from anywhere|remote[- ]?first.{0,40}global|globally distributed|remote from any country|international contractors|contractors worldwide/i;
-  const africa = /hire.{0,35}(africa|ghana)|africa.{0,35}(eligible|hiring|remote)|african countries|work from africa/i;
-  const restriction = /must be based in (the )?(united states|u\.?s\.?|canada|united kingdom|uk|europe)|only hiring in|residents of (the )?(united states|canada|uk|united kingdom)|not available in (ghana|africa)/i;
-
-  if (worldwide.test(text)) evidence.push("Public website contains an explicit worldwide/any-country hiring signal");
-  if (africa.test(text)) evidence.push("Public website contains an Africa/Ghana hiring signal");
-  if (restriction.test(text)) evidence.push("Public website contains a geographic hiring restriction");
-
-  if (evidence.some(item => item.includes("restriction"))) return { status: "review", policy: "restricted_or_ambiguous", evidence };
-  if (evidence.some(item => item.includes("worldwide") || item.includes("Africa/Ghana"))) {
-    return { status: "eligible", policy: "explicit_global_or_africa", evidence };
-  }
-  return { status: "review", policy: "unknown", evidence: ["No clear public evidence that hiring is available from Ghana"] };
 }
 
 function employeeRange(text) {
@@ -118,26 +102,26 @@ async function inspectCompany(websiteUrl, source) {
   }
 
   const combinedText = evidencePages.map(item => item.text).join(" ");
-  const policy = eligibilityFrom(combinedText);
+  const policy = evaluateHiringPolicy(combinedText, "Ghana");
   const range = employeeRange(combinedText);
   const linkedinUrl = $("a[href*='linkedin.com/company/']").first().attr("href") ?? null;
-  const eligibleSize = range.max !== null && range.max <= 50;
-  const evidence = [...policy.evidence, ...evidencePages.map(item => `Checked public page: ${item.url}`)];
+  const companySizeStatus = range.max === null ? "unknown" : range.max <= 50 ? "within_target" : "over_target";
+  const evidence = [...policy.evidence.map(item => `${item.type}: ${item.signal}`), ...evidencePages.map(item => `Checked public page: ${item.url}`)];
 
   if (range.max !== null) evidence.push(`Detected public team size range: ${range.min}-${range.max}`);
-  if (!eligibleSize) evidence.push("Company size has not been verified as 50 employees or fewer");
+  if (range.max === null) evidence.push("Company size has not been verified");
 
-  const eligibilityStatus = policy.status === "eligible" && eligibleSize ? "eligible" : "review";
+  const eligibilityStatus = policy.status === "ineligible" ? "ineligible" : policy.status === "eligible" ? "eligible" : "review";
 
   db.prepare(`
     INSERT INTO companies (
       name, domain, website_url, careers_url, linkedin_url,
-      employee_count_min, employee_count_max, remote_policy, hiring_regions,
+      employee_count_min, employee_count_max, company_size_status, remote_policy, hiring_regions,
       eligibility_status, eligibility_evidence, discovery_source, last_checked_at,
       last_http_status, updated_at
     ) VALUES (
       @name, @domain, @websiteUrl, @careersUrl, @linkedinUrl,
-      @employeeMin, @employeeMax, @remotePolicy, @hiringRegions,
+      @employeeMin, @employeeMax, @companySizeStatus, @remotePolicy, @hiringRegions,
       @eligibilityStatus, @evidence, @source, CURRENT_TIMESTAMP,
       @status, CURRENT_TIMESTAMP
     )
@@ -148,6 +132,7 @@ async function inspectCompany(websiteUrl, source) {
       linkedin_url = COALESCE(excluded.linkedin_url, companies.linkedin_url),
       employee_count_min = COALESCE(excluded.employee_count_min, companies.employee_count_min),
       employee_count_max = COALESCE(excluded.employee_count_max, companies.employee_count_max),
+      company_size_status = CASE WHEN excluded.company_size_status = 'unknown' THEN companies.company_size_status ELSE excluded.company_size_status END,
       remote_policy = excluded.remote_policy,
       hiring_regions = excluded.hiring_regions,
       eligibility_status = excluded.eligibility_status,
@@ -164,13 +149,24 @@ async function inspectCompany(websiteUrl, source) {
     linkedinUrl,
     employeeMin: range.min,
     employeeMax: range.max,
+    companySizeStatus,
     remotePolicy: policy.policy,
-    hiringRegions: policy.status === "eligible" ? "explicit_global_or_africa" : "unknown",
+    hiringRegions: policy.policy,
     eligibilityStatus,
     evidence: JSON.stringify(evidence),
     source,
     status: page.status
   });
+
+  const companyId = db.prepare("SELECT id FROM companies WHERE domain = ?").get(domain).id;
+  const insertEvidence = db.prepare(`
+    INSERT OR IGNORE INTO company_evidence (company_id, evidence_type, evidence_text, source_url, confidence)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  for (const item of policy.evidence) {
+    const sourcePage = evidencePages.find(entry => entry.text.toLowerCase().includes(item.signal.toLowerCase()));
+    insertEvidence.run(companyId, item.type, item.signal, sourcePage?.url ?? page.url, item.type === "missing_evidence" ? 0.2 : 0.85);
+  }
 
   return { domain, name, careersUrl, eligibilityStatus };
 }

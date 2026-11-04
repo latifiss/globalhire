@@ -8,6 +8,7 @@ export const schema = [
     linkedin_url TEXT,
     employee_count_min INTEGER,
     employee_count_max INTEGER,
+    company_size_status TEXT NOT NULL DEFAULT 'unknown',
     remote_policy TEXT NOT NULL DEFAULT 'unknown',
     hiring_regions TEXT NOT NULL DEFAULT 'unknown',
     eligibility_status TEXT NOT NULL DEFAULT 'review',
@@ -69,5 +70,14 @@ export const schema = [
   "CREATE INDEX IF NOT EXISTS idx_companies_last_job_check ON companies(last_job_check_at)",
   "CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)",
   "CREATE INDEX IF NOT EXISTS idx_jobs_alert ON jobs(ghana_eligible, alert_sent_at)",
-  "CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company_id)"
+  "CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company_id)",
+  `CREATE TABLE IF NOT EXISTS company_evidence (id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE, evidence_type TEXT NOT NULL, evidence_text TEXT NOT NULL, source_url TEXT NOT NULL, confidence REAL NOT NULL DEFAULT 0.5, observed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS job_evidence (id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE, evidence_type TEXT NOT NULL, evidence_text TEXT NOT NULL, source_url TEXT NOT NULL, confidence REAL NOT NULL DEFAULT 0.5, observed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS job_revisions (id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE, content_hash TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', location_text TEXT, hiring_policy TEXT NOT NULL DEFAULT 'unknown', captured_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(job_id, content_hash))`,
+  `CREATE TABLE IF NOT EXISTS telegram_state (state_key TEXT PRIMARY KEY, state_value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  "CREATE INDEX IF NOT EXISTS idx_company_evidence_company ON company_evidence(company_id)",
+  "CREATE INDEX IF NOT EXISTS idx_job_evidence_job ON job_evidence(job_id)",
+  "CREATE INDEX IF NOT EXISTS idx_job_revisions_job ON job_revisions(job_id)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS uq_company_evidence_record ON company_evidence(company_id, evidence_type, evidence_text, source_url)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS uq_job_evidence_record ON job_evidence(job_id, evidence_type, evidence_text, source_url)"
 ];
