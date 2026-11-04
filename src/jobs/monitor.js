@@ -8,9 +8,6 @@ import { sendJobAlert } from "../telegram/bot.js";
 import { evaluateHiringPolicy } from "../eligibility/policy.js";
 
 const jobLinkHint = /job|career|opening|position|role|greenhouse|lever\.co|ashbyhq|workable/i;
-const globalEvidence = /worldwide|anywhere in the world|work from anywhere|remote from any country|global remote|international contractors|contractors worldwide|open to candidates across (the )?world/i;
-const africaEvidence = /hire.{0,35}(africa|ghana)|africa.{0,35}(eligible|hiring|remote)|african countries|work from africa/i;
-const restrictiveEvidence = /must be based in (the )?(united states|u\.?s\.?|canada|united kingdom|uk|europe)|only hiring in|residents of (the )?(united states|canada|uk|united kingdom)|not available in (ghana|africa)|cannot hire in (ghana|africa)/i;
 
 const atsHosts = new Set(["boards.greenhouse.io", "job-boards.greenhouse.io", "jobs.lever.co", "jobs.ashbyhq.com"]);
 
@@ -144,11 +141,11 @@ async function saveJob(company, parsed) {
   db.prepare(`
     INSERT INTO jobs (
       company_id, title, description, job_url, application_url, location_text,
-      remote_policy, posted_at, role_families, role_match_score, ghana_eligible,
+      remote_policy, hiring_policy, posted_at, role_families, role_match_score, ghana_eligible,
       content_hash, last_seen_at, updated_at, status
     ) VALUES (
       @companyId, @title, @description, @jobUrl, @applicationUrl, @locationText,
-      @remotePolicy, @postedAt, @roleFamilies, @roleScore, @eligible,
+      @remotePolicy, @hiringPolicy, @postedAt, @roleFamilies, @roleScore, @eligible,
       @hash, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'open'
     )
     ON CONFLICT(job_url) DO UPDATE SET
@@ -157,6 +154,7 @@ async function saveJob(company, parsed) {
       application_url = excluded.application_url,
       location_text = excluded.location_text,
       remote_policy = excluded.remote_policy,
+      hiring_policy = excluded.hiring_policy,
       posted_at = COALESCE(excluded.posted_at, jobs.posted_at),
       role_families = excluded.role_families,
       role_match_score = excluded.role_match_score,
@@ -172,7 +170,8 @@ async function saveJob(company, parsed) {
     jobUrl: parsed.jobUrl,
     applicationUrl: parsed.applicationUrl,
     locationText: parsed.locationText,
-    remotePolicy: parsed.eligible ? "explicit_global_or_africa" : "unknown",
+    remotePolicy: parsed.eligibilityPolicy,
+    hiringPolicy: parsed.eligibilityPolicy,
     postedAt: parsed.postedAt,
     roleFamilies: JSON.stringify(parsed.roleFamilies),
     roleScore: parsed.roleScore,
@@ -244,11 +243,11 @@ async function checkCompany(company) {
     db.prepare(`
       INSERT INTO jobs (
         company_id, title, description, job_url, application_url, location_text,
-        remote_policy, posted_at, role_families, role_match_score, ghana_eligible,
+        remote_policy, hiring_policy, posted_at, role_families, role_match_score, ghana_eligible,
         content_hash, last_seen_at, updated_at, status
       ) VALUES (
         @companyId, @title, @description, @jobUrl, @applicationUrl, @locationText,
-        @remotePolicy, @postedAt, @roleFamilies, @roleScore, @eligible,
+        @remotePolicy, @hiringPolicy, @postedAt, @roleFamilies, @roleScore, @eligible,
         @hash, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'open'
       )
       ON CONFLICT(job_url) DO UPDATE SET
@@ -257,6 +256,7 @@ async function checkCompany(company) {
         application_url = excluded.application_url,
         location_text = excluded.location_text,
         remote_policy = excluded.remote_policy,
+      hiring_policy = excluded.hiring_policy,
         posted_at = COALESCE(excluded.posted_at, jobs.posted_at),
         role_families = excluded.role_families,
         role_match_score = excluded.role_match_score,
@@ -272,7 +272,8 @@ async function checkCompany(company) {
       jobUrl: parsed.jobUrl,
       applicationUrl: parsed.applicationUrl,
       locationText: parsed.locationText,
-      remotePolicy: parsed.eligible ? "explicit_global_or_africa" : "unknown",
+      remotePolicy: parsed.eligibilityPolicy,
+    hiringPolicy: parsed.eligibilityPolicy,
       postedAt: parsed.postedAt,
       roleFamilies: JSON.stringify(parsed.roleFamilies),
       roleScore: parsed.roleScore,
