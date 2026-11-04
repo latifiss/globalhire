@@ -5,7 +5,7 @@ const providers = [
   { name: "lever", hosts: ["jobs.lever.co"] },
   { name: "ashby", hosts: ["jobs.ashbyhq.com"] },
   { name: "workable", hosts: ["apply.workable.com"] },
-  { name: "smartrecruiters", hosts: ["careers.smartrecruiters.com"] },
+  { name: "smartrecruiters", hosts: ["careers.smartrecruiters.com", "jobs.smartrecruiters.com"] },
   { name: "recruitee", hosts: [] },
   { name: "zoho", hosts: [] }
 ];
