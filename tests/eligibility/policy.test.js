@@ -43,3 +43,15 @@ test("flags conflicting worldwide and region-limited statements for review", () 
   assert.equal(result.status, "review");
   assert.equal(result.policy, "conflicting_hiring_evidence");
 });
+
+test("keeps company-wide hiring claims under review when country-level restrictions conflict", () => {
+  const result = evaluateHiringPolicy("We hire worldwide, but this position requires candidates to be based in the United States.");
+  assert.equal(result.status, "review");
+  assert.equal(result.policy, "conflicting_hiring_evidence");
+});
+
+test("detects a direct Ghana hiring exclusion", () => {
+  const result = evaluateHiringPolicy("We cannot employ contractors based in Ghana.");
+  assert.equal(result.status, "ineligible");
+  assert.equal(result.policy, "explicit_country_exclusion");
+});
