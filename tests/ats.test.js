@@ -6,7 +6,7 @@ test("detects supported public ATS board URLs", () => {
   assert.deepEqual(detectAtsBoard("https://boards.greenhouse.io/acme"), {
     provider: "greenhouse", host: "boards.greenhouse.io", slug: "acme", url: "https://boards.greenhouse.io/acme"
   });
-  assert.equal(detectAtsBoard("https://apply.workable.com/acme/"), null === null ? "workable" : "");
+  assert.equal(detectAtsBoard("https://apply.workable.com/acme/").provider, "workable");
   assert.equal(detectAtsBoard("https://careers.smartrecruiters.com/acme").provider, "smartrecruiters");
   assert.equal(detectAtsBoard("https://acme.recruitee.com/o/product-designer").provider, "recruitee");
   assert.equal(detectAtsBoard("https://acme.zohorecruit.com/careers").provider, "zoho");
