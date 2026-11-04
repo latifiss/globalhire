@@ -51,7 +51,10 @@ async function parseJobPage(url, fallbackTitle) {
   const text = pageText($);
   const locationText = text.match(/(?:location|workplace|remote location)\s*[:\-]?\s*([^.!]{1,100})/i)?.[1]?.trim() ?? "";
   const role = matchRole(title, description);
-  if (!role.matched) return null;
+  if (!role.matched) {
+    logger.debug({ url: page.url, title, reason: "role_not_matched" }, "Rejected job page candidate");
+    return null;
+  }
 
   const eligibility = jobEligibility(`${title} ${description} ${locationText}`);
   const postedText = $("time[datetime]").first().attr("datetime") ?? null;
@@ -214,7 +217,7 @@ async function saveJob(company, parsed) {
       title: parsed.title,
       companyName: company.name || company.domain,
       locationText: parsed.locationText,
-      ghanaEligible: parsed.eligible,
+      ghanaEligible: effective.eligible,
       matchScore: parsed.roleScore,
       jobUrl: parsed.jobUrl
     }).catch(error => {
@@ -228,13 +231,33 @@ async function saveJob(company, parsed) {
 }
 
 async function checkCompany(company) {
-  const pageUrl = company.careers_url || company.website_url;
+  let pageUrl = company.careers_url || company.website_url;
   if (!pageUrl) {
     logger.info({ company: company.domain, reason: "no_website_or_careers_url" }, "Skipped company job check");
     return { pages: 0, jobs: 0, alerts: 0 };
   }
 
-  const careersPage = await fetchPage(pageUrl);
+  let careersPage = await fetchPage(pageUrl);
+  if (!careersPage?.html || careersPage.status >= 400 || !company.careers_url) {
+    for (const candidatePath of ["/careers", "/jobs", "/company/careers", "/about/careers", "/join-us"]) {
+      const candidateUrl = new URL(candidatePath, company.website_url || pageUrl).href;
+      if (candidateUrl === pageUrl) continue;
+      const probe = await fetchPage(candidateUrl);
+      if (!probe?.html || probe.status >= 400) continue;
+      const probe$ = parseHtml(probe.html);
+      const hasJobLinks = probe$("a[href]").toArray().some(element => {
+        const label = probe$(element).text().trim();
+        const href = probe$(element).attr("href") ?? "";
+        const absolute = absoluteUrl(href, probe.url);
+        return looksLikeJobUrl(href, label) || Boolean(absolute && atsBoardFromUrl(absolute));
+      });
+      if (hasJobLinks || /career|job opening|open roles|join our team|vacanc/i.test(pageText(probe$))) {
+        careersPage = probe;
+        pageUrl = probe.url;
+        break;
+      }
+    }
+  }
   if (!careersPage?.html || careersPage.status >= 400) {
     logger.info({ company: company.domain, pageUrl, reason: "careers_page_fetch_failed" }, "Company job check could not fetch page");
     db.prepare("UPDATE companies SET last_job_check_at = CURRENT_TIMESTAMP WHERE id = ?").run(company.id);
@@ -329,7 +352,7 @@ async function checkCompany(company) {
         title: parsed.title,
         companyName: company.name || company.domain,
         locationText: parsed.locationText,
-        ghanaEligible: parsed.eligible,
+        ghanaEligible: effective.eligible,
         matchScore: parsed.roleScore,
         jobUrl: parsed.jobUrl
       }).catch(error => {
@@ -366,8 +389,9 @@ export async function runJobMonitoring() {
     const companies = db.prepare(`
       SELECT id, name, domain, website_url, careers_url, eligibility_status
       FROM companies
-      WHERE (careers_url IS NOT NULL AND careers_url != '')
-         OR (website_url IS NOT NULL AND website_url != '')
+      WHERE ((careers_url IS NOT NULL AND careers_url != '')
+         OR (website_url IS NOT NULL AND website_url != ''))
+        AND domain NOT IN ('github.community', 'githubstatus.com', 'github.careers', 'github.blog', 'calendly.com', 'twitch.tv', 'trust.wellfound.ai')
       ORDER BY COALESCE(last_job_check_at, '') ASC
     `).all();
 
