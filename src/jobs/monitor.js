@@ -76,6 +76,8 @@ async function fetchAtsJobs(pageUrl) {
   if (!page?.html || page.status >= 400) return [];
   const $ = parseHtml(page.html);
   const boards = new Map();
+  const directBoard = detectAtsBoard(pageUrl);
+  if (directBoard) boards.set(directBoard.provider + "/" + directBoard.host + "/" + (directBoard.slug ?? directBoard.url), directBoard);
 
   $("a[href]").each((_, element) => {
     const url = absoluteUrl($(element).attr("href"), page.url);
