@@ -30,7 +30,9 @@ const africaPatterns = [
 const exclusionPatterns = [
   /\bnot (?:available|open|eligible) (?:to|for|in|from) candidates? (?:based )?in ghana\b/i,
   /\bcannot hire (?:in|from) ghana\b/i,
-  /\bdo not hire (?:in|from) ghana\b/i,
+  /\bcannot (?:hire|employ) .{0,70}(?:based|located|resident) in ghana\b/i,
+  /\bdo not (?:hire|employ) .{0,70}(?:based|located|resident) in ghana\b/i,
+  /\bwill not (?:hire|employ) .{0,70}(?:based|located|resident) in ghana\b/i,
   /\bnot hiring (?:in|from) ghana\b/i,
   /\bghana is (?:not|excluded)\b/i,
   /\bexcluding ghana\b/i
@@ -40,6 +42,8 @@ const regionRestrictionPatterns = [
   /\bonly (?:hire|hiring|accept|consider|employ) (?:people|candidates|applicants|employees|contractors)?\s*(?:who are )?(?:based|located|resident)?\s*(?:in|within) (?:the )?(?:united states|u\.?s\.?|canada|united kingdom|uk|europe|european union|north america)\b/i,
   /\bmust be (?:based|located|resident) in (?:the )?(?:united states|u\.?s\.?|canada|united kingdom|uk|europe|european union)\b/i,
   /\bcurrently hiring (?:only )?in (?:the )?(?:united states|u\.?s\.?|canada|united kingdom|uk|europe)\b/i,
+  /\b(?:this|the) (?:position|role|job) .{0,100}(?:requires|require) .{0,60}(?:based|located|resident) in (?:the )?(?:united states|u\.?s\.?|canada|united kingdom|uk|europe|european union)\b/i,
+  /\brequires? candidates? to be based in (?:the )?(?:united states|u\.?s\.?|canada|united kingdom|uk|europe|european union)\b/i,
   /\beligible to work in (?:the )?(?:united states|u\.?s\.?|canada|united kingdom|uk)\b/i
 ];
 
