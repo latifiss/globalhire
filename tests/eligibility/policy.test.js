@@ -50,6 +50,18 @@ test("keeps company-wide hiring claims under review when country-level restricti
   assert.equal(result.policy, "conflicting_hiring_evidence");
 });
 
+test("keeps a worldwide company claim under review when this role requires US residency", () => {
+  const result = evaluateHiringPolicy("We hire worldwide, but this position requires candidates to be based in the United States.");
+  assert.equal(result.status, "review");
+  assert.equal(result.policy, "conflicting_hiring_evidence");
+});
+
+test("detects an exclusion for contractors based in Ghana", () => {
+  const result = evaluateHiringPolicy("We cannot employ contractors based in Ghana.");
+  assert.equal(result.status, "ineligible");
+  assert.equal(result.policy, "explicit_country_exclusion");
+});
+
 test("detects a direct Ghana hiring exclusion", () => {
   const result = evaluateHiringPolicy("We cannot employ contractors based in Ghana.");
   assert.equal(result.status, "ineligible");
