@@ -5,6 +5,7 @@ import { logger } from "../config/logger.js";
 import { fetchPage, parseHtml, absoluteUrl, pageText } from "../crawler/http.js";
 import { matchRole } from "../roles/matcher.js";
 import { sendJobAlert } from "../telegram/bot.js";
+import { evaluateHiringPolicy } from "../eligibility/policy.js";
 
 const jobLinkHint = /job|career|opening|position|role|greenhouse|lever\.co|ashbyhq|workable/i;
 const globalEvidence = /worldwide|anywhere in the world|work from anywhere|remote from any country|global remote|international contractors|contractors worldwide|open to candidates across (the )?world/i;
@@ -26,8 +27,7 @@ function atsBoardFromUrl(value) {
 }
 
 function jobEligibility(text) {
-  if (restrictiveEvidence.test(text)) return false;
-  return globalEvidence.test(text) || africaEvidence.test(text);
+  return evaluateHiringPolicy(text, "Ghana");
 }
 
 function contentHash(title, description, location) {
@@ -56,7 +56,7 @@ async function parseJobPage(url, fallbackTitle) {
   const role = matchRole(title, description);
   if (!role.matched) return null;
 
-  const eligible = jobEligibility(`${title} ${description} ${locationText}`);
+  const eligibility = jobEligibility(`${title} ${description} ${locationText}`);
   const postedText = $("time[datetime]").first().attr("datetime") ?? null;
   const applyLink = $("a[href]").filter((_, el) => /apply|submit application/i.test($(el).text())).first().attr("href");
   const applicationUrl = applyLink ? absoluteUrl(applyLink, page.url) : page.url;
@@ -67,7 +67,8 @@ async function parseJobPage(url, fallbackTitle) {
     jobUrl: page.url,
     applicationUrl,
     locationText: locationText.slice(0, 240),
-    eligible,
+    eligible: eligibility.status === "eligible",
+    eligibilityPolicy: eligibility.policy,
     roleFamilies: role.families,
     roleScore: role.score,
     postedAt: postedText && !Number.isNaN(Date.parse(postedText)) ? new Date(postedText).toISOString() : null,
@@ -113,7 +114,7 @@ async function fetchAtsJobs(pageUrl) {
         if (!role.matched) continue;
         const locationValue = item.location?.name ?? item.categories?.location ?? item.location ?? "";
         const location = typeof locationValue === "string" ? locationValue : JSON.stringify(locationValue);
-        const eligible = jobEligibility(`${title} ${description} ${location}`);
+        const eligibility = jobEligibility(`${title} ${description} ${location}`);
         const jobUrl = item.absolute_url ?? item.hostedUrl ?? item.url ?? item.applyUrl;
         if (!jobUrl) continue;
         const postedValue = item.updated_at ?? item.createdAt ?? item.created_at ?? item.publishedAt ?? null;
@@ -123,7 +124,8 @@ async function fetchAtsJobs(pageUrl) {
           jobUrl,
           applicationUrl: item.applyUrl ?? jobUrl,
           locationText: location.slice(0, 240),
-          eligible,
+          eligible: eligibility.status === "eligible",
+          eligibilityPolicy: eligibility.policy,
           roleFamilies: role.families,
           roleScore: role.score,
           postedAt: postedValue && !Number.isNaN(Date.parse(postedValue)) ? new Date(postedValue).toISOString() : null,
