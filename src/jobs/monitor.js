@@ -73,17 +73,18 @@ async function parseJobPage(url, fallbackTitle) {
 
 async function fetchAtsJobs(pageUrl) {
   const page = await fetchPage(pageUrl);
-  if (!page?.html || page.status >= 400) return [];
-  const $ = parseHtml(page.html);
   const boards = new Map();
   const directBoard = detectAtsBoard(pageUrl);
   if (directBoard) boards.set(directBoard.provider + "/" + directBoard.host + "/" + (directBoard.slug ?? directBoard.url), directBoard);
 
-  $("a[href]").each((_, element) => {
-    const url = absoluteUrl($(element).attr("href"), page.url);
-    const board = url && detectAtsBoard(url);
-    if (board) boards.set(board.provider + "/" + board.host + "/" + (board.slug ?? board.url), board);
-  });
+  if (page?.html && page.status < 400) {
+    const $ = parseHtml(page.html);
+    $("a[href]").each((_, element) => {
+      const url = absoluteUrl($(element).attr("href"), page.url);
+      const board = url && detectAtsBoard(url);
+      if (board) boards.set(board.provider + "/" + board.host + "/" + (board.slug ?? board.url), board);
+    });
+  }
 
   const jobs = [];
   for (const board of boards.values()) {
