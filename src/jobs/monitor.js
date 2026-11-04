@@ -66,6 +66,7 @@ async function parseJobPage(url, fallbackTitle) {
     locationText: locationText.slice(0, 240),
     eligible: eligibility.status === "eligible",
     eligibilityPolicy: eligibility.policy,
+    eligibilityEvidence: eligibility.evidence,
     roleFamilies: role.families,
     roleScore: role.score,
     postedAt: postedText && !Number.isNaN(Date.parse(postedText)) ? new Date(postedText).toISOString() : null,
@@ -123,6 +124,7 @@ async function fetchAtsJobs(pageUrl) {
           locationText: location.slice(0, 240),
           eligible: eligibility.status === "eligible",
           eligibilityPolicy: eligibility.policy,
+          eligibilityEvidence: eligibility.evidence,
           roleFamilies: role.families,
           roleScore: role.score,
           postedAt: postedValue && !Number.isNaN(Date.parse(postedValue)) ? new Date(postedValue).toISOString() : null,
@@ -134,6 +136,22 @@ async function fetchAtsJobs(pageUrl) {
     }
   }
   return jobs;
+}
+
+function recordJobEvidence(jobUrl, parsed) {
+  const job = db.prepare("SELECT id FROM jobs WHERE job_url = ?").get(jobUrl);
+  if (!job) return;
+  db.prepare(`
+    INSERT OR IGNORE INTO job_revisions (job_id, content_hash, title, description, location_text, hiring_policy)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(job.id, parsed.hash, parsed.title, parsed.description, parsed.locationText, parsed.eligibilityPolicy);
+  const insertEvidence = db.prepare(`
+    INSERT OR IGNORE INTO job_evidence (job_id, evidence_type, evidence_text, source_url, confidence)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  for (const item of parsed.eligibilityEvidence ?? []) {
+    insertEvidence.run(job.id, item.type, item.signal, jobUrl, item.type === "missing_evidence" ? 0.2 : 0.85);
+  }
 }
 
 async function saveJob(company, parsed) {
@@ -178,6 +196,7 @@ async function saveJob(company, parsed) {
     eligible: parsed.eligible ? 1 : 0,
     hash: parsed.hash
   });
+  recordJobEvidence(parsed.jobUrl, parsed);
 
   if (!previous && parsed.eligible) {
     const sent = await sendJobAlert({
@@ -280,6 +299,7 @@ async function checkCompany(company) {
       eligible: parsed.eligible ? 1 : 0,
       hash: parsed.hash
     });
+    recordJobEvidence(parsed.jobUrl, parsed);
     jobs += 1;
 
     if (!previous && parsed.eligible) {
