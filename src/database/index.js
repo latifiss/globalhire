@@ -1,18 +1,32 @@
 import fs from "node:fs";
 import path from "node:path";
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import { config } from "../config/env.js";
 import { schema } from "./schema.js";
 
 const databasePath = path.resolve(config.databasePath);
 fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 
-export const db = new Database(databasePath);
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
-db.pragma("busy_timeout = 5000");
+export const db = new DatabaseSync(databasePath);
+db.exec("PRAGMA journal_mode = WAL");
+db.exec("PRAGMA foreign_keys = ON");
+db.exec("PRAGMA busy_timeout = 5000");
 
-const migrate = db.transaction(() => {
+function transaction(callback) {
+  return (...args) => {
+    db.exec("BEGIN");
+    try {
+      const result = callback(...args);
+      db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  };
+}
+
+const migrate = transaction(() => {
   for (const statement of schema) db.exec(statement);
   const applied = db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get().version ?? 0;
   if (applied < 1) db.prepare("INSERT INTO schema_migrations (version) VALUES (1)").run();
