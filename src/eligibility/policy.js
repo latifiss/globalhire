@@ -22,6 +22,9 @@ const worldwidePatterns = [
 
 const africaPatterns = [
   /\bremote across africa\b/i,
+  /\b(?:hire|hiring|employ) remotely (?:in|across|from) africa\b/i,
+  /\b(?:hire|hiring|employ) (?:people|talent|team members|employees|contractors) remotely (?:in|across|from) africa\b/i,
+  /\bremote (?:roles|positions|opportunities) across africa\b/i,
   /\bremote in africa\b/i,
   /\bwork from africa\b/i,
   /\bcandidates? based in africa\b/i,
