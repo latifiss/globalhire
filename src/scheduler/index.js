@@ -2,12 +2,11 @@ import { config } from "../config/env.js";
 import { logger } from "../config/logger.js";
 import { runCompanyDiscovery } from "../discovery/company.js";
 
-
 let companyDiscoveryRunning = false;
 
 export async function runCycle() {
   if (companyDiscoveryRunning) {
-    logger.warn("Skipping crawl cycle because a previous cycle is still running");
+    logger.warn("Skipping discovery cycle because a previous cycle is still running");
     return;
   }
 
@@ -19,13 +18,11 @@ export async function runCycle() {
   } finally {
     companyDiscoveryRunning = false;
   }
-
-  logger.info("Job monitoring temporarily disabled while company discovery is being expanded");
 }
 
 export function startScheduler() {
-  const intervalMs = config.crawlIntervalHours * 60 * 60 * 1000;
-  logger.info({ intervalHours: config.crawlIntervalHours }, "Crawler scheduler started");
+  const intervalMs = config.discoveryIntervalMinutes * 60 * 1000;
+  logger.info(`🔁 Continuous company discovery enabled | next cycle every ${config.discoveryIntervalMinutes} minutes`);
   void runCycle();
   const timer = setInterval(() => void runCycle(), intervalMs);
   timer.unref();
