@@ -13,7 +13,6 @@ const enqueue = db.prepare(`
 
 export function enqueueCompanies(candidates) {
   let added = 0;
-  const insert = db.transaction ? null : null;
   for (const candidate of candidates) {
     const url = candidate.websiteUrl || candidate.url;
     const domain = normalizeDomain(url);
