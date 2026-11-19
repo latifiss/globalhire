@@ -8,13 +8,15 @@ GlobalHire is a personal job-discovery and monitoring tool. It indexes small com
 - SQLite database for companies, jobs, crawl history, and discovery sources
 - Telegram bot commands: /start, /help, /stats, /companies, /jobs, /chatid
 - Role-family matcher for product design, design engineering, frontend engineering, and product/full-stack engineering
-- Candidate-domain discovery from configured public source homepages and optional seed domains
+- Candidate-domain discovery from public directories, optional seed domains, and a paginated Wikidata company dataset
+- Persistent, deduplicated discovery queue with retry tracking and resumable processing
+- Discovery queue statistics exposed through `/status`
 - Careers-page detection and scheduled monitoring of indexed careers pages and matching job pages
 - Evidence-based Ghana eligibility checks; unknown policies remain unconfirmed
 - Health and status endpoints at /health and /status
 - Initial automated tests for role matching
 
-The discovery adapter currently examines links from configured source homepages and domains in `seeds/seed-domains.txt`. This is a starting point, not a complete web-wide company index. Source-specific adapters, pagination, more robust career-site parsers, and stronger evidence extraction are still needed to expand coverage reliably.
+Company discovery currently combines configured public directories, seed domains, and a paginated Wikidata SPARQL adapter. Candidate domains are normalized and stored in a persistent SQLite queue before website inspection, so interrupted runs can resume instead of losing the candidate batch. Wikidata advances by 500 results per scheduled run and cycles back to the beginning after reaching the end. This is a scalable foundation, not a guarantee of thousands of verified or eligible employers: directory coverage, dataset relevance, site accessibility, and company verification still determine the final yield. Search-engine HTML scraping was removed because the configured queries returned no usable results.
 
 ## Requirements
 
@@ -36,7 +38,7 @@ npm run dev
 
 Open your bot in Telegram and send `/start`, then `/chatid`. Copy the returned ID into `TELEGRAM_CHAT_ID` in `.env` and restart GlobalHire. Never commit `.env` or your bot token.
 
-Add candidate domains to `seeds/seed-domains.txt`, one domain per line, while source-specific discovery adapters are being expanded.
+Add candidate domains to `seeds/seed-domains.txt`, one domain per line. Add or disable directory sources in `seeds/discovery-sources.json`. The `/status` endpoint includes pending, processing, completed, and failed discovery queue counts.
 
 Check the local health endpoint at http://localhost:3000/health and database statistics at http://localhost:3000/status.
 
