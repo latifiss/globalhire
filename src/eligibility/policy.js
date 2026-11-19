@@ -1,10 +1,3 @@
-const countryNames = {
-  ghana: ["ghana"],
-  nigeria: ["nigeria"],
-  kenya: ["kenya"],
-  southafrica: ["south africa"]
-};
-
 const worldwidePatterns = [
   /\bworldwide\b/i,
   /\banywhere in the world\b/i,
@@ -13,19 +6,41 @@ const worldwidePatterns = [
   /\bopen to candidates from all countries\b/i,
   /\bopen to applicants from all countries\b/i,
   /\bremote from any country\b/i,
-  /\binternational contractors\b/i,
+  /\bwork from anywhere\b/i,
+  /\banywhere on the planet\b/i,
+  /\bglobally remote\b/i,
+  /\bremote globally\b/i,
+  /\bglobal remote team\b/i,
+  /\bno geographic restrictions\b/i,
+  /\bno location restrictions\b/i,
+  /\bdistributed globally\b/i,
+  /\b(?:hire|hiring|employ) (?:people|talent|team members|employees|contractors) (?:from|in) (?:any|all) countries\b/i,
   /\bcontractors worldwide\b/i,
-  /\bwork from anywhere\b/i
+  /\binternational contractors\b/i,
+  /\bglobal contractor(?:s| hiring)?\b/i
 ];
 
 const africaPatterns = [
+  /\bremote across africa\b/i,
+  /\bremote in africa\b/i,
+  /\bwork from africa\b/i,
   /\bcandidates? based in africa\b/i,
   /\bapplicants? based in africa\b/i,
-  /\bhire(?:s|d|ing)? .{0,35}africa\b/i,
-  /\bafrica.{0,35}(?:eligible|hiring|candidates|applicants|remote|work from)\b/i,
-  /\bwork from africa\b/i,
-  /\bafrican countries\b/i
+  /\bafrican countries\b/i,
+  /\b(?:hire|hiring|employ) (?:in|across|from) africa\b/i,
+  /\bafrica.{0,50}(?:eligible|hiring|candidates|applicants|remote|work from)\b/i
 ];
+
+const regionalPatterns = [
+  { region: "EMEA", patterns: [/\bEMEA\b/i, /\bEurope, Middle East and Africa\b/i] },
+  { region: "Europe", patterns: [/\bremote in europe\b/i, /\bremote across europe\b/i, /\b(?:hire|hiring) in europe\b/i, /\bEuropean countries\b/i] },
+  { region: "LATAM", patterns: [/\bLATAM\b/i, /\bLatin America\b/i, /\bremote across latin america\b/i] },
+  { region: "APAC", patterns: [/\bAPAC\b/i, /\bAsia Pacific\b/i] },
+  { region: "Americas", patterns: [/\bAmericas\b/i, /\bNorth and South America\b/i] },
+  { region: "North America", patterns: [/\bNorth America\b/i, /\bremote across north america\b/i] }
+];
+
+const countryNames = { ghana: ["ghana"] };
 
 const exclusionPatterns = [
   /\bnot (?:available|open|eligible) (?:to|for|in|from) candidates? (?:based )?in ghana\b/i,
@@ -66,31 +81,25 @@ export function evaluateHiringPolicy(value = "", country = "Ghana") {
   const directCountry = matchingEvidence(text, countryPatterns, "country_allowed");
   const worldwide = matchingEvidence(text, worldwidePatterns, "worldwide");
   const africa = matchingEvidence(text, africaPatterns, "africa_allowed");
+  const regional = regionalPatterns.flatMap(({region,patterns}) => matchingEvidence(text, patterns, "regional").map(item=>({...item,region})));
   const exclusions = matchingEvidence(text, exclusionPatterns, "country_excluded");
   const regionalRestrictions = matchingEvidence(text, regionRestrictionPatterns, "region_restricted");
   const positive = [...directCountry, ...worldwide, ...africa];
   const restrictive = [...exclusions, ...regionalRestrictions];
 
-  if (exclusions.length) {
-    return { status: "ineligible", policy: "explicit_country_exclusion", evidence: [...positive, ...restrictive] };
-  }
+  if (exclusions.length) return { status: "ineligible", policy: "explicit_country_exclusion", evidence: [...positive, ...regional, ...restrictive], regions: regional.map(item=>item.region) };
+  if (positive.length && restrictive.length) return { status: "review", policy: "conflicting_hiring_evidence", evidence: [...positive, ...regional, ...restrictive], regions: regional.map(item=>item.region) };
+  if (regionalRestrictions.length) return { status: "ineligible", policy: "region_restricted", evidence: [...regional, ...regionalRestrictions], regions: regional.map(item=>item.region) };
+  if (directCountry.length) return { status: "eligible", policy: "explicit_country_allowed", evidence: [...directCountry, ...regional], regions: regional.map(item=>item.region) };
+  if (worldwide.length) return { status: "eligible", policy: "worldwide", evidence: [...worldwide, ...regional], regions: regional.map(item=>item.region) };
+  if (africa.length) return { status: "eligible", policy: "africa_allowed", evidence: [...africa, ...regional], regions: regional.map(item=>item.region) };
+  if (regional.length) return { status: "review", policy: "regional_scope_requires_verification", evidence: regional, regions: regional.map(item=>item.region) };
 
-  if (positive.length && restrictive.length) {
-    return { status: "review", policy: "conflicting_hiring_evidence", evidence: [...positive, ...restrictive] };
-  }
-
-  if (regionalRestrictions.length) {
-    return { status: "ineligible", policy: "region_restricted", evidence: regionalRestrictions };
-  }
-
-  if (positive.length) {
-    const policyType = directCountry.length ? "explicit_country_allowed" : africa.length ? "africa_allowed" : "worldwide";
-    return { status: "eligible", policy: policyType, evidence: positive };
-  }
-
+  const infrastructure = matchingEvidence(text, [/\b(?:deel|remote\.com|oyster|papaya global)\b/i], "international_employment_infrastructure");
+  const contractor = matchingEvidence(text, [/\b(?:hire|hiring|work) (?:global|international) contractors\b/i, /\bcontractors? (?:in|from) multiple countries\b/i], "contractor_support");
   return {
     status: "review",
-    policy: "unknown",
-    evidence: [{ type: "missing_evidence", signal: "No explicit public hiring evidence found for " + country }]
+    policy: infrastructure.length || contractor.length ? "supporting_international_signals" : "unknown",
+    evidence: [...infrastructure, ...contractor, { type: "missing_evidence", signal: "No explicit public hiring evidence found for " + country }]
   };
 }
