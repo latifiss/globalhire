@@ -77,5 +77,14 @@ export function getStats() {
     "SELECT crawler, status, started_at, finished_at, error FROM crawl_runs ORDER BY id DESC LIMIT 1"
   ).get();
 
-  return { companies: companyCounts, jobs: jobCounts, lastRun: lastRun ?? null };
+  const discoveryQueue = db.prepare(`
+    SELECT COUNT(*) AS total,
+      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+      SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing,
+      SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+    FROM discovery_queue
+  `).get();
+
+  return { companies: companyCounts, discoveryQueue, jobs: jobCounts, lastRun: lastRun ?? null };
 }
