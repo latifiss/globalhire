@@ -286,8 +286,8 @@ export async function runCompanyDiscovery() {
             completeCompany(item.id);
             logger.info(`🏢 ${result.name} | ${result.domain} | ${result.eligibilityStatus}`);
           } else {
-            completeCompany(item.id);
-            logger.debug(`⏭️ Skipped ${item.domain}`);
+            failCompany(item.id, "Website could not be verified or returned an unsuccessful response");
+            logger.debug(`⏭️ Could not verify ${item.domain}`);
           }
         } catch (error) {
           failCompany(item.id, error.message);
