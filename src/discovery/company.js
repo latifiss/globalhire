@@ -240,7 +240,7 @@ export async function runCompanyDiscovery() {
     for (const source of discoverySources()) {
       pagesChecked += 1;
       const externalCandidates = await findExternalCompanyDomains(source);
-      logger.info({ source: source.name, candidatesFound: externalCandidates.length }, "Company discovery source checked");
+      logger.info(`🔎 ${source.name}: ${externalCandidates.length} companies`);
       for (const candidate of externalCandidates) {
         if (!candidates.has(candidate.domain)) {
           candidates.set(candidate.domain, { url: candidate.url, source: candidate.source });
@@ -259,17 +259,12 @@ export async function runCompanyDiscovery() {
           const result = await inspectCompany(candidate.url, candidate.source);
           if (result) {
             found += 1;
-            logger.info({
-              company: result.domain,
-              careersUrl: result.careersUrl,
-              eligibilityStatus: result.eligibilityStatus,
-              source: candidate.source
-            }, "Company candidate checked");
+            logger.info(`🏢 ${result.name} | ${result.domain} | ${result.eligibilityStatus === "eligible" ? "🌍" : result.eligibilityStatus === "ineligible" ? "⛔" : "🟡"} ${result.eligibilityStatus}`);
           } else {
-            logger.debug({ domain, source: candidate.source }, "Company candidate skipped");
+            logger.debug(`⏭️ Skipped ${domain}`);
           }
         } catch (error) {
-          logger.warn({ domain, source: candidate.source, error: error.message }, "Company candidate check failed");
+          logger.warn(`⚠️ ${domain}: ${error.message}`);
         }
       }
     });
@@ -280,14 +275,14 @@ export async function runCompanyDiscovery() {
         pages_checked = ?, records_found = ? WHERE id = ?
     `).run(pagesChecked, found, run.lastInsertRowid);
 
-    logger.info({ pagesChecked, candidates: candidates.size, found }, "Company discovery run completed");
+    logger.info(`✅ Discovery complete | ${candidates.size} candidates | ${found} saved | ${pagesChecked} pages`);
     return { pagesChecked, candidates: candidates.size, found };
   } catch (error) {
     db.prepare(`
       UPDATE crawl_runs SET status = 'failed', finished_at = CURRENT_TIMESTAMP,
         pages_checked = ?, records_found = ?, error = ? WHERE id = ?
     `).run(pagesChecked, found, error.message, run.lastInsertRowid);
-    logger.error({ error: error.message }, "Company discovery run failed");
+    logger.error(`❌ Discovery failed: ${error.message}`);
     throw error;
   }
 }
