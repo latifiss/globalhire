@@ -9,8 +9,9 @@ function delay(milliseconds) {
 
 export async function fetchWikidataCompanies(offset = 0) {
   const safeOffset = Math.max(0, Number(offset) || 0);
-  const query = `SELECT ?company ?companyLabel ?website WHERE {
-    ?company wdt:P31/wdt:P279* wd:Q4830453;
+  const query = `SELECT DISTINCT ?company ?companyLabel ?website WHERE {
+    VALUES ?type { wd:Q4830453 wd:Q783794 wd:Q43229 }
+    ?company wdt:P31 ?type;
              wdt:P856 ?website.
     SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
   }
