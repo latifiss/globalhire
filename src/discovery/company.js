@@ -237,7 +237,7 @@ export async function runCompanyDiscovery() {
     const candidates = new Map();
 
     for (const domain of sourceDomains()) {
-      const url = /^https?:\\/\\//i.test(domain) ? domain : `https://${domain}`;
+      const url = /^https?:\/\//i.test(domain) ? domain : `https://${domain}`;
       const normalized = normalizeDomain(url);
       if (normalized) candidates.set(normalized, { url, source: "seed-domains.txt" });
     }
