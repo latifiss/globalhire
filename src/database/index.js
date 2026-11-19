@@ -79,10 +79,10 @@ export function getStats() {
 
   const discoveryQueue = db.prepare(`
     SELECT COUNT(*) AS total,
-      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
-      SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing,
-      SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done,
-      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+      COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+      COALESCE(SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END), 0) AS processing,
+      COALESCE(SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END), 0) AS done,
+      COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed
     FROM discovery_queue
   `).get();
 
