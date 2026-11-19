@@ -209,7 +209,7 @@ async function findExternalCompanyDomains(source) {
     candidates.set(domain, { domain, source: source.name, url });
   });
 
-  return [...candidates.values()].slice(0, 25);
+  return [...candidates.values()].slice(0, 100);
 }
 
 export async function runCompanyDiscovery() {
