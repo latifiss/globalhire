@@ -15,6 +15,7 @@ export const config = {
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN ?? "",
   telegramChatId: process.env.TELEGRAM_CHAT_ID ?? "",
   userLocation: process.env.USER_LOCATION ?? "Ghana",
+  discoveryIntervalMinutes: numberFromEnv("DISCOVERY_INTERVAL_MINUTES", 15),
   crawlIntervalHours: numberFromEnv("CRAWL_INTERVAL_HOURS", 24),
   maxPagesPerDomain: numberFromEnv("MAX_PAGES_PER_DOMAIN", 30),
   requestTimeoutMs: numberFromEnv("REQUEST_TIMEOUT_MS", 15000),

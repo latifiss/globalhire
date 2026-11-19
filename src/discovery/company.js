@@ -4,6 +4,10 @@ import { fileURLToPath } from "node:url";
 import { db } from "../database/index.js";
 import { fetchPage, parseHtml, absoluteUrl, normalizeDomain, pageText } from "../crawler/http.js";
 import { logger } from "../config/logger.js";
+import { config } from "../config/env.js";
+import { evaluateHiringPolicy } from "../eligibility/policy.js";
+import { fetchWikidataCompanies } from "./wikidata.js";
+import { enqueueCompanies, resetStaleQueueItems, claimNextCompany, completeCompany, failCompany, getDiscoveryQueueStats } from "./queue.js";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(currentDir, "../..");
@@ -30,10 +34,10 @@ function isIgnoredDomain(domain) {
 
 function isLikelyCompanyLink(label, url) {
   const text = `${label} ${url}`.toLowerCase();
-  if (!label || label.length < 2) return false;
-  if (/privacy|terms|cookie|status|documentation|support|help center|blog|press|newsroom|login|sign.?up|sign.?in|pricing|contact|about us|social media/i.test(text)) return false;
-  return /company|startup|product|team|founder|website|visit|launch|maker|saas|software|platform|app|studio|labs|inc\b|\.io\b|\.ai\b|\.com\b/i.test(text)
-    && !/^(home|learn more|read more|click here|more|next|previous)$/i.test(label.trim());
+  if (/privacy|terms|cookie|status|documentation|support|help center|blog|press|newsroom|login|sign.?up|sign.?in|pricing|contact|social media|careers|jobs/i.test(text)) return false;
+  if (/^(home|learn more|read more|click here|more|next|previous|view all|website)$/i.test(label.trim())) return false;
+  return /company|startup|product|team|founder|website|visit|launch|maker|saas|software|platform|app|studio|labs|inc\\b|\\.io\\b|\\.ai\\b|\\.com\\b/i.test(text)
+    || (label.length >= 2 && label.length <= 80 && !/^(about|resources|community|blog|events)$/i.test(label.trim()));
 }
 
 function getCompanyName($, domain) {
@@ -42,23 +46,6 @@ function getCompanyName($, domain) {
     || $("title").first().text()
     || domain;
   return value.replace(/\s*[|—–:-].*$/, "").replace(/\s+/g, " ").trim().slice(0, 160) || domain;
-}
-
-function eligibilityFrom(text) {
-  const evidence = [];
-  const worldwide = /worldwide|anywhere in the world|work from anywhere|remote[- ]?first.{0,40}global|globally distributed|remote from any country|international contractors|contractors worldwide/i;
-  const africa = /hire.{0,35}(africa|ghana)|africa.{0,35}(eligible|hiring|remote)|african countries|work from africa/i;
-  const restriction = /must be based in (the )?(united states|u\.?s\.?|canada|united kingdom|uk|europe)|only hiring in|residents of (the )?(united states|canada|uk|united kingdom)|not available in (ghana|africa)/i;
-
-  if (worldwide.test(text)) evidence.push("Public website contains an explicit worldwide/any-country hiring signal");
-  if (africa.test(text)) evidence.push("Public website contains an Africa/Ghana hiring signal");
-  if (restriction.test(text)) evidence.push("Public website contains a geographic hiring restriction");
-
-  if (evidence.some(item => item.includes("restriction"))) return { status: "review", policy: "restricted_or_ambiguous", evidence };
-  if (evidence.some(item => item.includes("worldwide") || item.includes("Africa/Ghana"))) {
-    return { status: "eligible", policy: "explicit_global_or_africa", evidence };
-  }
-  return { status: "review", policy: "unknown", evidence: ["No clear public evidence that hiring is available from Ghana"] };
 }
 
 function employeeRange(text) {
@@ -118,26 +105,26 @@ async function inspectCompany(websiteUrl, source) {
   }
 
   const combinedText = evidencePages.map(item => item.text).join(" ");
-  const policy = eligibilityFrom(combinedText);
+  const policy = evaluateHiringPolicy(combinedText, "Ghana");
   const range = employeeRange(combinedText);
   const linkedinUrl = $("a[href*='linkedin.com/company/']").first().attr("href") ?? null;
-  const eligibleSize = range.max !== null && range.max <= 50;
-  const evidence = [...policy.evidence, ...evidencePages.map(item => `Checked public page: ${item.url}`)];
+  const companySizeStatus = range.max === null ? "unknown" : range.max <= 50 ? "within_target" : "over_target";
+  const evidence = [...policy.evidence.map(item => `${item.type}: ${item.signal}`), ...evidencePages.map(item => `Checked public page: ${item.url}`)];
 
   if (range.max !== null) evidence.push(`Detected public team size range: ${range.min}-${range.max}`);
-  if (!eligibleSize) evidence.push("Company size has not been verified as 50 employees or fewer");
+  if (range.max === null) evidence.push("Company size has not been verified");
 
-  const eligibilityStatus = policy.status === "eligible" && eligibleSize ? "eligible" : "review";
+  const eligibilityStatus = policy.status === "ineligible" ? "ineligible" : policy.status === "eligible" ? "eligible" : "review";
 
   db.prepare(`
     INSERT INTO companies (
       name, domain, website_url, careers_url, linkedin_url,
-      employee_count_min, employee_count_max, remote_policy, hiring_regions,
+      employee_count_min, employee_count_max, company_size_status, remote_policy, hiring_regions,
       eligibility_status, eligibility_evidence, discovery_source, last_checked_at,
       last_http_status, updated_at
     ) VALUES (
       @name, @domain, @websiteUrl, @careersUrl, @linkedinUrl,
-      @employeeMin, @employeeMax, @remotePolicy, @hiringRegions,
+      @employeeMin, @employeeMax, @companySizeStatus, @remotePolicy, @hiringRegions,
       @eligibilityStatus, @evidence, @source, CURRENT_TIMESTAMP,
       @status, CURRENT_TIMESTAMP
     )
@@ -148,6 +135,7 @@ async function inspectCompany(websiteUrl, source) {
       linkedin_url = COALESCE(excluded.linkedin_url, companies.linkedin_url),
       employee_count_min = COALESCE(excluded.employee_count_min, companies.employee_count_min),
       employee_count_max = COALESCE(excluded.employee_count_max, companies.employee_count_max),
+      company_size_status = CASE WHEN excluded.company_size_status = 'unknown' THEN companies.company_size_status ELSE excluded.company_size_status END,
       remote_policy = excluded.remote_policy,
       hiring_regions = excluded.hiring_regions,
       eligibility_status = excluded.eligibility_status,
@@ -164,13 +152,24 @@ async function inspectCompany(websiteUrl, source) {
     linkedinUrl,
     employeeMin: range.min,
     employeeMax: range.max,
+    companySizeStatus,
     remotePolicy: policy.policy,
-    hiringRegions: policy.status === "eligible" ? "explicit_global_or_africa" : "unknown",
+    hiringRegions: policy.policy,
     eligibilityStatus,
     evidence: JSON.stringify(evidence),
     source,
     status: page.status
   });
+
+  const companyId = db.prepare("SELECT id FROM companies WHERE domain = ?").get(domain).id;
+  const insertEvidence = db.prepare(`
+    INSERT OR IGNORE INTO company_evidence (company_id, evidence_type, evidence_text, source_url, confidence)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  for (const item of policy.evidence) {
+    const sourcePage = evidencePages.find(entry => entry.text.toLowerCase().includes(item.signal.toLowerCase()));
+    insertEvidence.run(companyId, item.type, item.signal, sourcePage?.url ?? page.url, item.type === "missing_evidence" ? 0.2 : 0.85);
+  }
 
   return { domain, name, careersUrl, eligibilityStatus };
 }
@@ -201,78 +200,118 @@ async function findExternalCompanyDomains(source) {
 
   $("a[href]").each((_, element) => {
     const href = $(element).attr("href");
-    const url = absoluteUrl(href, page.url);
+    let url = absoluteUrl(href, page.url);
     if (!url) return;
+    if (source.type === "search_engine") {
+      try {
+        const resultUrl = new URL(url);
+        const target = resultUrl.searchParams.get("uddg") || resultUrl.searchParams.get("url");
+        if (target && (target.startsWith("http://") || target.startsWith("https://"))) url = target;
+        else if (["duckduckgo.com", "bing.com", "google.com"].includes(resultUrl.hostname)) return;
+      } catch {
+        return;
+      }
+    }
     const domain = normalizeDomain(url);
     if (!domain || domain === sourceDomain || domain.endsWith(`.${sourceDomain}`)) return;
     if (isIgnoredDomain(domain)) return;
     if (/\.(png|jpe?g|gif|svg|webp|pdf|zip|css|js)(\?|$)/i.test(url)) return;
     if (domain.split(".").length < 2) return;
     const label = $(element).text().replace(/\s+/g, " ").trim();
-    if (!isLikelyCompanyLink(label, url)) return;
+    if (source.type !== "search_engine" && !isLikelyCompanyLink(label, url)) return;
+    if (["duckduckgo.com", "bing.com", "google.com"].includes(domain)) return;
     candidates.set(domain, { domain, source: source.name, url });
   });
 
-  return [...candidates.values()].slice(0, 25);
+  return [...candidates.values()].slice(0, 100);
 }
 
 export async function runCompanyDiscovery() {
   const run = db.prepare("INSERT INTO crawl_runs (crawler, status) VALUES (?, ?)").run("company-discovery", "running");
   let found = 0;
   let pagesChecked = 0;
+  let discovered = 0;
 
   try {
+    resetStaleQueueItems();
     const candidates = new Map();
+
     for (const domain of sourceDomains()) {
       const url = /^https?:\/\//i.test(domain) ? domain : `https://${domain}`;
       const normalized = normalizeDomain(url);
       if (normalized) candidates.set(normalized, { url, source: "seed-domains.txt" });
     }
 
-    for (const source of discoverySources()) {
+    for (const source of discoverySources().filter(item => item.type !== "search_engine")) {
       pagesChecked += 1;
       const externalCandidates = await findExternalCompanyDomains(source);
-      logger.info({ source: source.name, candidatesFound: externalCandidates.length }, "Company discovery source checked");
+      logger.info(`🔎 ${source.name}: ${externalCandidates.length} companies`);
       for (const candidate of externalCandidates) {
-        if (!candidates.has(candidate.domain)) {
-          candidates.set(candidate.domain, { url: candidate.url, source: candidate.source });
-        }
+        if (!candidates.has(candidate.domain)) candidates.set(candidate.domain, { url: candidate.url, source: candidate.source });
       }
     }
 
-    for (const [domain, candidate] of candidates) {
-      pagesChecked += 1;
-      try {
-        const result = await inspectCompany(candidate.url, candidate.source);
-        if (result) {
-          found += 1;
-          logger.info({
-            company: result.domain,
-            careersUrl: result.careersUrl,
-            eligibilityStatus: result.eligibilityStatus,
-            source: candidate.source
-          }, "Company candidate checked");
-        } else {
-          logger.debug({ domain, source: candidate.source }, "Company candidate skipped");
+    const state = db.prepare("SELECT state_value FROM discovery_state WHERE state_key = 'wikidata_offset'").get();
+    const offset = Number(state?.state_value ?? 0);
+    try {
+      const result = await fetchWikidataCompanies(offset);
+      for (const company of result.companies) {
+        const domain = normalizeDomain(company.websiteUrl);
+        if (domain && !isIgnoredDomain(domain) && !candidates.has(domain)) {
+          candidates.set(domain, { url: company.websiteUrl, source: "Wikidata", name: company.name });
         }
-      } catch (error) {
-        logger.warn({ domain, source: candidate.source, error: error.message }, "Company candidate check failed");
       }
+      db.prepare(`
+        INSERT INTO discovery_state (state_key, state_value, updated_at)
+        VALUES ('wikidata_offset', ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(state_key) DO UPDATE SET state_value = excluded.state_value, updated_at = CURRENT_TIMESTAMP
+      `).run(String(result.nextOffset));
+      logger.info(`🌐 Wikidata: ${result.companies.length} companies | next offset ${result.nextOffset}`);
+    } catch (error) {
+      logger.warn(`⚠️ Wikidata discovery unavailable: ${error.message}`);
     }
+
+    discovered = enqueueCompanies([...candidates.values()]);
+    logger.info(`📥 Discovery queue updated | ${candidates.size} candidates | ${discovered} new`);
+
+    const worker = async () => {
+      while (true) {
+        const item = claimNextCompany();
+        if (!item) return;
+        pagesChecked += 1;
+        try {
+          const result = await inspectCompany(item.website_url, item.source);
+          if (result) {
+            found += 1;
+            completeCompany(item.id);
+            logger.info(`🏢 ${result.name} | ${result.domain} | ${result.eligibilityStatus}`);
+          } else {
+            failCompany(item.id, "Website could not be verified or returned an unsuccessful response");
+            logger.debug(`⏭️ Could not verify ${item.domain}`);
+          }
+        } catch (error) {
+          failCompany(item.id, error.message);
+          logger.warn(`⚠️ ${item.domain}: ${error.message}`);
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: config.crawlConcurrency }, worker));
+    const queue = getDiscoveryQueueStats();
 
     db.prepare(`
       UPDATE crawl_runs SET status = 'success', finished_at = CURRENT_TIMESTAMP,
         pages_checked = ?, records_found = ? WHERE id = ?
     `).run(pagesChecked, found, run.lastInsertRowid);
 
-    logger.info({ pagesChecked, candidates: candidates.size, found }, "Company discovery run completed");
-    return { pagesChecked, candidates: candidates.size, found };
+    logger.info(`✅ Discovery complete | ${queue.total} queued | ${queue.pending} pending | ${found} verified this run`);
+    return { pagesChecked, candidates: candidates.size, discovered, found, queue };
   } catch (error) {
     db.prepare(`
       UPDATE crawl_runs SET status = 'failed', finished_at = CURRENT_TIMESTAMP,
         pages_checked = ?, records_found = ?, error = ? WHERE id = ?
     `).run(pagesChecked, found, error.message, run.lastInsertRowid);
-    logger.error({ error: error.message }, "Company discovery run failed");
+    logger.error(`❌ Discovery failed: ${error.message}`);
     throw error;
   }
 }
