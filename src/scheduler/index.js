@@ -1,7 +1,7 @@
 import { config } from "../config/env.js";
 import { logger } from "../config/logger.js";
 import { runCompanyDiscovery } from "../discovery/company.js";
-import { runJobMonitoring } from "../jobs/monitor.js";
+
 
 let companyDiscoveryRunning = false;
 let jobMonitoringRunning = false;
@@ -21,14 +21,7 @@ export async function runCycle() {
     companyDiscoveryRunning = false;
   }
 
-  jobMonitoringRunning = true;
-  try {
-    await runJobMonitoring();
-  } catch (error) {
-    logger.error({ error: error.message }, "Job monitoring cycle failed");
-  } finally {
-    jobMonitoringRunning = false;
-  }
+  logger.info("Job monitoring temporarily disabled while company discovery is being expanded");
 }
 
 export function startScheduler() {
