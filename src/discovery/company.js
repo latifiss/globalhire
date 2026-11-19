@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { db } from "../database/index.js";
 import { fetchPage, parseHtml, absoluteUrl, normalizeDomain, pageText } from "../crawler/http.js";
 import { logger } from "../config/logger.js";
+import { config } from "../config/env.js";
 import { evaluateHiringPolicy } from "../eligibility/policy.js";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
