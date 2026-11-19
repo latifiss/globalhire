@@ -1,30 +1,107 @@
 [
   {
-    "name": "Product Hunt weekly launches",
+    "name": "Product Hunt launches",
     "url": "https://www.producthunt.com/leaderboard/weekly/all",
     "type": "company_discovery",
     "enabled": true,
-    "notes": "Discover recently launched products. Verify linked companies independently."
+    "notes": "Launch directory"
   },
   {
     "name": "Indie Hackers products",
     "url": "https://www.indiehackers.com/products",
     "type": "company_discovery",
     "enabled": true,
-    "notes": "Discover independent software businesses and small teams from public product pages."
+    "notes": "Independent software companies"
   },
   {
     "name": "TinySeed portfolio",
     "url": "https://tinyseed.com/portfolio",
     "type": "company_discovery",
     "enabled": true,
-    "notes": "Discover small bootstrapped SaaS companies; team size and hiring must be verified independently."
+    "notes": "Bootstrapped SaaS portfolio"
   },
   {
-    "name": "Wellfound startup directory",
+    "name": "Wellfound company directory",
     "url": "https://wellfound.com/companies",
     "type": "company_discovery",
     "enabled": true,
-    "notes": "Discover candidate companies from publicly accessible directory links; obey robots.txt and site terms."
+    "notes": "Startup directory"
+  },
+  {
+    "name": "Techstars portfolio",
+    "url": "https://www.techstars.com/portfolio",
+    "type": "company_discovery",
+    "enabled": true,
+    "notes": "Accelerator portfolio"
+  },
+  {
+    "name": "500 Global portfolio",
+    "url": "https://500.co/companies",
+    "type": "company_discovery",
+    "enabled": true,
+    "notes": "Venture portfolio"
+  },
+  {
+    "name": "Y Combinator company directory",
+    "url": "https://www.ycombinator.com/companies",
+    "type": "company_discovery",
+    "enabled": true,
+    "notes": "Startup directory"
+  },
+  {
+    "name": "Antler portfolio",
+    "url": "https://www.antler.co/portfolio",
+    "type": "company_discovery",
+    "enabled": true,
+    "notes": "Early-stage portfolio"
+  },
+  {
+    "name": "SaaSHub",
+    "url": "https://www.saashub.com",
+    "type": "company_discovery",
+    "enabled": true,
+    "notes": "Software product directory"
+  },
+  {
+    "name": "BetaList startups",
+    "url": "https://betalist.com",
+    "type": "company_discovery",
+    "enabled": true,
+    "notes": "Early-stage product launches"
+  },
+  {
+    "name": "F6S companies",
+    "url": "https://www.f6s.com/companies",
+    "type": "company_discovery",
+    "enabled": true,
+    "notes": "Startup ecosystem directory"
+  },
+  {
+    "name": "Remote companies",
+    "url": "https://remote.com/companies",
+    "type": "company_discovery",
+    "enabled": true,
+    "notes": "Remote company directory"
+  },
+  {
+    "name": "GitHub awesome remote companies",
+    "url": "https://github.com/remoteintech/remote-jobs",
+    "type": "company_discovery",
+    "enabled": true,
+    "notes": "Public remote companies list"
+  },
+  {
+    "name": "Open startup directory",
+    "url": "https://startupbuffer.com",
+    "type": "company_discovery",
+    "enabled": true,
+    "notes": "Startup directory"
+  },
+  {
+    "name": "SaaS directories",
+    "url": "https://www.getapp.com",
+    "type": "company_discovery",
+    "enabled": true,
+    "notes": "Software discovery directory"
   }
 ]
