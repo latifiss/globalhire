@@ -234,7 +234,7 @@ async function checkCompany(company) {
         const label = probe$(element).text().trim();
         const href = probe$(element).attr("href") ?? "";
         const absolute = absoluteUrl(href, probe.url);
-        return looksLikeJobUrl(href, label) || Boolean(absolute && atsBoardFromUrl(absolute));
+        return looksLikeJobUrl(href, label) || Boolean(absolute && detectAtsBoard(absolute));
       });
       if (hasJobLinks || /career|job opening|open roles|join our team|vacanc/i.test(pageText(probe$))) {
         careersPage = probe;
