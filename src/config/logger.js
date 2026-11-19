@@ -19,7 +19,8 @@ function write(level, first, second) {
   if (fields.status !== undefined) details.push(`HTTP ${fields.status}`);
   if (fields.error) details.push(fields.error);
   const suffix = details.length ? ` | ${details.join(" | ")}` : "";
-  const line = `${icons[level]} ${message}${suffix}`;
+  const prefix = /^\\p{Extended_Pictographic}/u.test(message) ? "" : `${icons[level]} `;
+  const line = `${prefix}${message}${suffix}`;
   if (level === "error") console.error(line);
   else if (level === "warn") console.warn(line);
   else console.log(line);
