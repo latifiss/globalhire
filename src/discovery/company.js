@@ -198,15 +198,26 @@ async function findExternalCompanyDomains(source) {
 
   $("a[href]").each((_, element) => {
     const href = $(element).attr("href");
-    const url = absoluteUrl(href, page.url);
+    let url = absoluteUrl(href, page.url);
     if (!url) return;
+    if (source.type === "search_engine") {
+      try {
+        const resultUrl = new URL(url);
+        const target = resultUrl.searchParams.get("uddg") || resultUrl.searchParams.get("url");
+        if (target && /^https?:\\/\\//i.test(target)) url = target;
+        else if (/duckduckgo\\.com|bing\\.com|google\\.com/i.test(resultUrl.hostname)) return;
+      } catch {
+        return;
+      }
+    }
     const domain = normalizeDomain(url);
     if (!domain || domain === sourceDomain || domain.endsWith(`.${sourceDomain}`)) return;
     if (isIgnoredDomain(domain)) return;
-    if (/\.(png|jpe?g|gif|svg|webp|pdf|zip|css|js)(\?|$)/i.test(url)) return;
+    if (/\\.(png|jpe?g|gif|svg|webp|pdf|zip|css|js)(\\?|$)/i.test(url)) return;
     if (domain.split(".").length < 2) return;
-    const label = $(element).text().replace(/\s+/g, " ").trim();
-    if (!isLikelyCompanyLink(label, url)) return;
+    const label = $(element).text().replace(/\\s+/g, " ").trim();
+    if (source.type !== "search_engine" && !isLikelyCompanyLink(label, url)) return;
+    if (/duckduckgo\\.com|bing\\.com|google\\.com/i.test(domain)) return;
     candidates.set(domain, { domain, source: source.name, url });
   });
 
