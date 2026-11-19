@@ -6,6 +6,8 @@ import { fetchPage, parseHtml, absoluteUrl, normalizeDomain, pageText } from "..
 import { logger } from "../config/logger.js";
 import { config } from "../config/env.js";
 import { evaluateHiringPolicy } from "../eligibility/policy.js";
+import { fetchWikidataCompanies } from "./wikidata.js";
+import { enqueueCompanies, resetStaleQueueItems, claimNextCompany, completeCompany, failCompany, getDiscoveryQueueStats } from "./queue.js";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(currentDir, "../..");
@@ -228,55 +230,82 @@ export async function runCompanyDiscovery() {
   const run = db.prepare("INSERT INTO crawl_runs (crawler, status) VALUES (?, ?)").run("company-discovery", "running");
   let found = 0;
   let pagesChecked = 0;
+  let discovered = 0;
 
   try {
+    resetStaleQueueItems();
     const candidates = new Map();
+
     for (const domain of sourceDomains()) {
-      const url = /^https?:\/\//i.test(domain) ? domain : `https://${domain}`;
+      const url = /^https?:\\/\\//i.test(domain) ? domain : `https://${domain}`;
       const normalized = normalizeDomain(url);
       if (normalized) candidates.set(normalized, { url, source: "seed-domains.txt" });
     }
 
-    for (const source of discoverySources()) {
+    for (const source of discoverySources().filter(item => item.type !== "search_engine")) {
       pagesChecked += 1;
       const externalCandidates = await findExternalCompanyDomains(source);
       logger.info(`🔎 ${source.name}: ${externalCandidates.length} companies`);
       for (const candidate of externalCandidates) {
-        if (!candidates.has(candidate.domain)) {
-          candidates.set(candidate.domain, { url: candidate.url, source: candidate.source });
-        }
+        if (!candidates.has(candidate.domain)) candidates.set(candidate.domain, { url: candidate.url, source: candidate.source });
       }
     }
 
-    const queue = [...candidates.entries()];
-    let cursor = 0;
-    const workers = Array.from({ length: Math.min(config.crawlConcurrency, queue.length) }, async () => {
-      while (cursor < queue.length) {
-        const index = cursor++;
-        const [domain, candidate] = queue[index];
-        pagesChecked += 1;
-        try {
-          const result = await inspectCompany(candidate.url, candidate.source);
-          if (result) {
-            found += 1;
-            logger.info(`🏢 ${result.name} | ${result.domain} | ${result.eligibilityStatus === "eligible" ? "🌍" : result.eligibilityStatus === "ineligible" ? "⛔" : "🟡"} ${result.eligibilityStatus}`);
-          } else {
-            logger.debug(`⏭️ Skipped ${domain}`);
-          }
-        } catch (error) {
-          logger.warn(`⚠️ ${domain}: ${error.message}`);
+    const state = db.prepare("SELECT state_value FROM discovery_state WHERE state_key = 'wikidata_offset'").get();
+    const offset = Number(state?.state_value ?? 0);
+    try {
+      const result = await fetchWikidataCompanies(offset);
+      for (const company of result.companies) {
+        const domain = normalizeDomain(company.websiteUrl);
+        if (domain && !isIgnoredDomain(domain) && !candidates.has(domain)) {
+          candidates.set(domain, { url: company.websiteUrl, source: "Wikidata", name: company.name });
         }
       }
-    });
-    await Promise.all(workers);
+      db.prepare(`
+        INSERT INTO discovery_state (state_key, state_value, updated_at)
+        VALUES ('wikidata_offset', ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(state_key) DO UPDATE SET state_value = excluded.state_value, updated_at = CURRENT_TIMESTAMP
+      `).run(String(result.nextOffset));
+      logger.info(`🌐 Wikidata: ${result.companies.length} companies | next offset ${result.nextOffset}`);
+    } catch (error) {
+      logger.warn(`⚠️ Wikidata discovery unavailable: ${error.message}`);
+    }
+
+    discovered = enqueueCompanies([...candidates.values()]);
+    logger.info(`📥 Discovery queue updated | ${candidates.size} candidates | ${discovered} new`);
+
+    const worker = async () => {
+      while (true) {
+        const item = claimNextCompany();
+        if (!item) return;
+        pagesChecked += 1;
+        try {
+          const result = await inspectCompany(item.website_url, item.source);
+          if (result) {
+            found += 1;
+            completeCompany(item.id);
+            logger.info(`🏢 ${result.name} | ${result.domain} | ${result.eligibilityStatus}`);
+          } else {
+            completeCompany(item.id);
+            logger.debug(`⏭️ Skipped ${item.domain}`);
+          }
+        } catch (error) {
+          failCompany(item.id, error.message);
+          logger.warn(`⚠️ ${item.domain}: ${error.message}`);
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: config.crawlConcurrency }, worker));
+    const queue = getDiscoveryQueueStats();
 
     db.prepare(`
       UPDATE crawl_runs SET status = 'success', finished_at = CURRENT_TIMESTAMP,
         pages_checked = ?, records_found = ? WHERE id = ?
     `).run(pagesChecked, found, run.lastInsertRowid);
 
-    logger.info(`✅ Discovery complete | ${candidates.size} candidates | ${found} saved | ${pagesChecked} pages`);
-    return { pagesChecked, candidates: candidates.size, found };
+    logger.info(`✅ Discovery complete | ${queue.total} queued | ${queue.pending} pending | ${found} verified this run`);
+    return { pagesChecked, candidates: candidates.size, discovered, found, queue };
   } catch (error) {
     db.prepare(`
       UPDATE crawl_runs SET status = 'failed', finished_at = CURRENT_TIMESTAMP,
