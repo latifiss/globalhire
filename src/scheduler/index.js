@@ -4,10 +4,9 @@ import { runCompanyDiscovery } from "../discovery/company.js";
 
 
 let companyDiscoveryRunning = false;
-let jobMonitoringRunning = false;
 
 export async function runCycle() {
-  if (companyDiscoveryRunning || jobMonitoringRunning) {
+  if (companyDiscoveryRunning) {
     logger.warn("Skipping crawl cycle because a previous cycle is still running");
     return;
   }
