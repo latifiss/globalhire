@@ -67,3 +67,33 @@ test("detects a direct Ghana hiring exclusion", () => {
   assert.equal(result.status, "ineligible");
   assert.equal(result.policy, "explicit_country_exclusion");
 });
+
+test("recognizes work from anywhere language", () => {
+  const result = evaluateHiringPolicy("Our team can work from anywhere on the planet.");
+  assert.equal(result.status, "eligible");
+  assert.equal(result.policy, "worldwide");
+});
+
+test("keeps EMEA-only evidence under review rather than assuming worldwide", () => {
+  const result = evaluateHiringPolicy("We are a remote team hiring across EMEA.");
+  assert.equal(result.status, "review");
+  assert.equal(result.policy, "regional_scope_requires_verification");
+  assert.ok(result.regions.includes("EMEA"));
+});
+
+test("recognizes explicit remote Africa evidence", () => {
+  const result = evaluateHiringPolicy("We hire remotely across Africa.");
+  assert.equal(result.status, "eligible");
+  assert.equal(result.policy, "africa_allowed");
+});
+
+test("EOR provider alone does not establish worldwide hiring", () => {
+  const result = evaluateHiringPolicy("We use Deel to pay our employees.");
+  assert.equal(result.status, "review");
+  assert.equal(result.policy, "supporting_international_signals");
+});
+
+test("remote alone is not treated as global eligibility", () => {
+  const result = evaluateHiringPolicy("This is a remote role for a distributed team.");
+  assert.equal(result.status, "review");
+});
