@@ -31,10 +31,10 @@ function isIgnoredDomain(domain) {
 
 function isLikelyCompanyLink(label, url) {
   const text = `${label} ${url}`.toLowerCase();
-  if (!label || label.length < 2) return false;
-  if (/privacy|terms|cookie|status|documentation|support|help center|blog|press|newsroom|login|sign.?up|sign.?in|pricing|contact|about us|social media/i.test(text)) return false;
-  return /company|startup|product|team|founder|website|visit|launch|maker|saas|software|platform|app|studio|labs|inc\b|\.io\b|\.ai\b|\.com\b/i.test(text)
-    && !/^(home|learn more|read more|click here|more|next|previous)$/i.test(label.trim());
+  if (/privacy|terms|cookie|status|documentation|support|help center|blog|press|newsroom|login|sign.?up|sign.?in|pricing|contact|social media|careers|jobs/i.test(text)) return false;
+  if (/^(home|learn more|read more|click here|more|next|previous|view all|website)$/i.test(label.trim())) return false;
+  return /company|startup|product|team|founder|website|visit|launch|maker|saas|software|platform|app|studio|labs|inc\\b|\\.io\\b|\\.ai\\b|\\.com\\b/i.test(text)
+    || (label.length >= 2 && label.length <= 80 && !/^(about|resources|community|blog|events)$/i.test(label.trim()));
 }
 
 function getCompanyName($, domain) {
@@ -236,25 +236,32 @@ export async function runCompanyDiscovery() {
       }
     }
 
-    for (const [domain, candidate] of candidates) {
-      pagesChecked += 1;
-      try {
-        const result = await inspectCompany(candidate.url, candidate.source);
-        if (result) {
-          found += 1;
-          logger.info({
-            company: result.domain,
-            careersUrl: result.careersUrl,
-            eligibilityStatus: result.eligibilityStatus,
-            source: candidate.source
-          }, "Company candidate checked");
-        } else {
-          logger.debug({ domain, source: candidate.source }, "Company candidate skipped");
+    const queue = [...candidates.entries()];
+    let cursor = 0;
+    const workers = Array.from({ length: Math.min(config.crawlConcurrency, queue.length) }, async () => {
+      while (cursor < queue.length) {
+        const index = cursor++;
+        const [domain, candidate] = queue[index];
+        pagesChecked += 1;
+        try {
+          const result = await inspectCompany(candidate.url, candidate.source);
+          if (result) {
+            found += 1;
+            logger.info({
+              company: result.domain,
+              careersUrl: result.careersUrl,
+              eligibilityStatus: result.eligibilityStatus,
+              source: candidate.source
+            }, "Company candidate checked");
+          } else {
+            logger.debug({ domain, source: candidate.source }, "Company candidate skipped");
+          }
+        } catch (error) {
+          logger.warn({ domain, source: candidate.source, error: error.message }, "Company candidate check failed");
         }
-      } catch (error) {
-        logger.warn({ domain, source: candidate.source, error: error.message }, "Company candidate check failed");
       }
-    }
+    });
+    await Promise.all(workers);
 
     db.prepare(`
       UPDATE crawl_runs SET status = 'success', finished_at = CURRENT_TIMESTAMP,
