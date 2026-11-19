@@ -4,11 +4,7 @@ import { normalizeDomain } from "../crawler/http.js";
 const enqueue = db.prepare(`
   INSERT INTO discovery_queue (domain, website_url, source, status)
   VALUES (?, ?, ?, 'pending')
-  ON CONFLICT(domain) DO UPDATE SET
-    website_url = excluded.website_url,
-    source = CASE WHEN discovery_queue.source = '' THEN excluded.source ELSE discovery_queue.source END,
-    status = CASE WHEN discovery_queue.status = 'failed' THEN 'pending' ELSE discovery_queue.status END,
-    updated_at = CURRENT_TIMESTAMP
+  ON CONFLICT(domain) DO NOTHING
 `);
 
 export function enqueueCompanies(candidates) {
