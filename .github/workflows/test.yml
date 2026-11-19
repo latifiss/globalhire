@@ -19,4 +19,5 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: find src tests -name '*.js' -print0 | xargs -0 -n1 node --check
       - run: npm test
